@@ -1,0 +1,5 @@
+{
+  "SUPABASE_URL": "https://replace-me.supabase.co",
+  "SUPABASE_PUBLISHABLE_KEY": "replace-me",
+  "SUPABASE_BUCKET": "internship-documents"
+}

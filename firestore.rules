@@ -1,0 +1,205 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && profile().role == 'admin' && profile().active == true;
+    }
+
+    function isCoordinator() {
+      return signedIn() && profile().role == 'coordinator' && profile().active == true;
+    }
+
+    function isStaff() {
+      return isAdmin() || isCoordinator();
+    }
+
+    function isStudent() {
+      return signedIn() && profile().role == 'student' && profile().active == true;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
+      allow create: if (
+        signedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'role', 'studentNumber', 'active',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.displayName is string &&
+        request.resource.data.displayName.size() > 1 &&
+        request.resource.data.studentNumber is string &&
+        request.resource.data.studentNumber.size() > 0 &&
+        request.resource.data.role == 'student' &&
+        request.resource.data.active == true
+      ) || isAdmin();
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isCoordinator() &&
+        resource.data.role == 'student' &&
+        request.resource.data.role == 'student' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'coordinatorId', 'coordinatorName', 'program', 'yearLevel',
+            'academicYear', 'updatedAt'
+          ])
+      ) || (
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'phone', 'photoUrl', 'updatedAt'])
+      );
+    }
+
+    match /requirements/{requirementId} {
+      allow read: if isStaff() || (
+        isStudent() && resource.data.studentId == request.auth.uid
+      );
+      allow create: if isStudent() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.status == 'pending';
+      allow update: if isStaff() || (
+        isStudent() &&
+        resource.data.studentId == request.auth.uid &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'fileName', 'storagePath', 'status', 'remarks',
+          'submittedAt', 'updatedAt', 'version'
+        ])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /dtr_entries/{entryId} {
+      allow read, create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isStaff() || (
+        isStudent() &&
+        (
+          resource.data.targetRole == 'student' ||
+          resource.data.targetRole == 'all' ||
+          resource.data.targetRole == 'user:' + request.auth.uid
+        )
+      );
+      allow create: if isStaff();
+      allow update: if isStaff() || (
+        isStudent() &&
+        (
+          resource.data.targetRole == 'student' ||
+          resource.data.targetRole == 'all' ||
+          resource.data.targetRole == 'user:' + request.auth.uid
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['readBy', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /moas/{moaId} {
+      allow read, create, update: if isStaff();
+      allow delete: if isStaff();
+    }
+
+    match /requirement_definitions/{definitionId} {
+      allow read: if isStaff() || (isStudent() && resource.data.active == true);
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /internship_profiles/{studentId} {
+      allow read: if isStaff() || (isStudent() && request.auth.uid == studentId);
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /requirement_versions/{versionId} {
+      allow read: if isStaff() || (
+        isStudent() &&
+        get(/databases/$(database)/documents/requirements/$(resource.data.requirementId)).data.studentId == request.auth.uid
+      );
+      allow create: if isStaff() || (
+        isStudent() &&
+        get(/databases/$(database)/documents/requirements/$(request.resource.data.requirementId)).data.studentId == request.auth.uid
+      );
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /tor_records/{recordId} {
+      allow read, create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /supervisor_evaluations/{token} {
+      allow get: if true;
+      allow list: if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff() || (
+        resource.data.status == 'pending' &&
+        resource.data.archived == false &&
+        request.resource.data.status == 'submitted' &&
+        request.time < resource.data.expiresAt &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ratings', 'comments', 'status', 'submittedAt', 'updatedAt'
+        ]) &&
+        request.resource.data.ratings.keys().hasAll([
+          'professionalism', 'workQuality', 'attendance',
+          'communication', 'initiative'
+        ]) &&
+        request.resource.data.ratings.keys().hasOnly([
+          'professionalism', 'workQuality', 'attendance',
+          'communication', 'initiative'
+        ]) &&
+        request.resource.data.ratings.professionalism is int &&
+        request.resource.data.ratings.professionalism >= 1 &&
+        request.resource.data.ratings.professionalism <= 5 &&
+        request.resource.data.ratings.workQuality is int &&
+        request.resource.data.ratings.workQuality >= 1 &&
+        request.resource.data.ratings.workQuality <= 5 &&
+        request.resource.data.ratings.attendance is int &&
+        request.resource.data.ratings.attendance >= 1 &&
+        request.resource.data.ratings.attendance <= 5 &&
+        request.resource.data.ratings.communication is int &&
+        request.resource.data.ratings.communication >= 1 &&
+        request.resource.data.ratings.communication <= 5 &&
+        request.resource.data.ratings.initiative is int &&
+        request.resource.data.ratings.initiative >= 1 &&
+        request.resource.data.ratings.initiative <= 5 &&
+        request.resource.data.comments is string &&
+        request.resource.data.comments.size() <= 3000 &&
+        request.resource.data.submittedAt == request.time &&
+        request.resource.data.updatedAt == request.time
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /academic_archives/{archiveId} {
+      allow read, create: if isStaff();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if isStaff();
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

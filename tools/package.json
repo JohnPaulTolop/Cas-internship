@@ -1,0 +1,8 @@
+{
+  "name": "practicum-connect-admin-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase-admin": "^13.5.0"
+  }
+}
