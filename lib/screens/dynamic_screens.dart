@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../core/app_theme.dart';
+
 import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
@@ -413,7 +415,7 @@ class PeopleScreen extends StatelessWidget {
     title: studentsOnly ? 'Student list' : 'User management',
     subtitle: studentsOnly
         ? 'Live student profiles registered in Firebase.'
-        : 'Activate or deactivate existing Firebase accounts.',
+        : 'Review coordinator registrations and manage active school accounts.',
     child: StreamBuilder<List<AppUser>>(
       stream: repository.watchUsers(
         role: studentsOnly ? UserRole.student : null,
@@ -428,93 +430,178 @@ class PeopleScreen extends StatelessWidget {
             message: 'Profiles created in Firebase appear here.',
           );
         }
-        return ListView.separated(
-          itemCount: users.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            final item = users[index];
-            return Card(
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(18),
-                leading: CircleAvatar(
-                  child: Text(
-                    item.displayName.isEmpty
-                        ? '?'
-                        : item.displayName[0].toUpperCase(),
-                  ),
+
+        final pending = !studentsOnly && user.role == UserRole.admin
+            ? users.where((item) => item.isPendingCoordinator).toList()
+            : const <AppUser>[];
+        final visibleUsers = studentsOnly
+            ? users
+            : users.where((item) => !item.isPendingCoordinator).toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (pending.isNotEmpty) ...[
+              _CoordinatorRequestPanel(
+                requests: pending,
+                onReview: (target, approve) =>
+                    _reviewCoordinator(context, target, approve),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (!studentsOnly)
+              Padding(
+                padding: const EdgeInsets.only(left: 2, bottom: 10),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Accounts',
+                      style: TextStyle(
+                        color: AppTheme.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceBlue,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${visibleUsers.length}',
+                        style: const TextStyle(
+                          color: AppTheme.blue,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                title: Text(item.displayName),
-                subtitle: Text(
-                  '${item.email}'
-                  '${item.studentNumber == null ? '' : '\n${item.studentNumber}'}'
-                  '${!studentsOnly ? '' : '\nCoordinator: ${item.coordinatorName ?? 'Unassigned'}'}',
-                ),
-                isThreeLine: studentsOnly || item.studentNumber != null,
-                trailing: studentsOnly
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Chip(
-                            label: Text(item.active ? 'Active' : 'Inactive'),
-                          ),
-                          PopupMenuButton<String>(
-                            tooltip: 'Coordinator assignment',
-                            onSelected: (value) async {
-                              if (value == 'assign') {
-                                await _assignCoordinator(context, item);
-                              } else {
-                                await repository.assignStudent(
+              ),
+            Expanded(
+              child: visibleUsers.isEmpty
+                  ? const _Empty(
+                      icon: Icons.manage_accounts_outlined,
+                      title: 'No approved accounts yet',
+                      message:
+                          'Pending coordinator requests can be reviewed above.',
+                    )
+                  : ListView.separated(
+                      itemCount: visibleUsers.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final item = visibleUsers[index];
+                        return _AccountCard(
+                          item: item,
+                          studentsOnly: studentsOnly,
+                          currentUser: user,
+                          onAssignCoordinator: studentsOnly
+                              ? () => _assignCoordinator(context, item)
+                              : null,
+                          onUnassignCoordinator:
+                              studentsOnly && item.coordinatorId != null
+                              ? () => repository.assignStudent(
                                   actor: user,
                                   student: item,
                                   coordinator: null,
-                                );
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              PopupMenuItem(
-                                value: 'assign',
-                                child: Text(
-                                  user.role == UserRole.coordinator
-                                      ? 'Assign to me'
-                                      : 'Assign coordinator',
-                                ),
-                              ),
-                              if (item.coordinatorId != null)
-                                const PopupMenuItem(
-                                  value: 'unassign',
-                                  child: Text('Remove assignment'),
-                                ),
-                            ],
-                          ),
-                        ],
-                      )
-                    : Switch(
-                        value: item.active,
-                        onChanged: item.uid == user.uid
-                            ? null
-                            : (active) async {
-                                try {
-                                  await repository.setUserActive(
-                                    actor: user,
-                                    target: item,
-                                    active: active,
-                                  );
-                                } catch (error) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$error')),
+                                )
+                              : null,
+                          onActiveChanged: !studentsOnly &&
+                                  item.uid != user.uid &&
+                                  item.approvalStatus == 'approved'
+                              ? (active) async {
+                                  try {
+                                    await repository.setUserActive(
+                                      actor: user,
+                                      target: item,
+                                      active: active,
                                     );
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('$error')),
+                                      );
+                                    }
                                   }
                                 }
-                              },
-                      ),
-              ),
-            );
-          },
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+          ],
         );
       },
     ),
   );
+
+  Future<void> _reviewCoordinator(
+    BuildContext context,
+    AppUser target,
+    bool approve,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          approve ? Icons.verified_user_outlined : Icons.person_off_outlined,
+          color: approve ? AppTheme.success : AppTheme.danger,
+        ),
+        title: Text(approve ? 'Approve coordinator?' : 'Reject request?'),
+        content: Text(
+          approve
+              ? 'Approve ${target.displayName} as a school coordinator? This will activate the account and grant coordinator permissions.'
+              : 'Reject ${target.displayName}\'s coordinator registration request? The account will remain unable to access the system.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: !approve
+                ? FilledButton.styleFrom(backgroundColor: AppTheme.danger)
+                : null,
+            child: Text(approve ? 'Approve' : 'Reject'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await repository.reviewCoordinatorRegistration(
+        actor: user,
+        target: target,
+        approve: approve,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              approve
+                  ? '${target.displayName} is now an approved coordinator.'
+                  : '${target.displayName}\'s coordinator request was rejected.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$error')),
+        );
+      }
+    }
+  }
 
   Future<void> _assignCoordinator(BuildContext context, AppUser student) async {
     if (user.role == UserRole.coordinator) {
@@ -527,12 +614,15 @@ class PeopleScreen extends StatelessWidget {
     }
     final coordinators =
         (await repository.watchUsers(role: UserRole.coordinator).first)
-            .where((coordinator) => coordinator.active)
+            .where(
+              (coordinator) =>
+                  coordinator.active && coordinator.isApprovedCoordinator,
+            )
             .toList();
     if (!context.mounted) return;
     if (coordinators.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active coordinators were found.')),
+        const SnackBar(content: Text('No approved coordinators were found.')),
       );
       return;
     }
@@ -543,8 +633,9 @@ class PeopleScreen extends StatelessWidget {
         builder: (context, setDialogState) => AlertDialog(
           title: Text('Assign ${student.displayName}'),
           content: DropdownButtonFormField<AppUser>(
+            isExpanded: true,
             initialValue: selected,
-            decoration: const InputDecoration(labelText: 'Coordinator'),
+            decoration: const InputDecoration(labelText: 'Program Coordinator'),
             items: coordinators
                 .map(
                   (coordinator) => DropdownMenuItem(
@@ -576,6 +667,330 @@ class PeopleScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CoordinatorRequestPanel extends StatelessWidget {
+  const _CoordinatorRequestPanel({
+    required this.requests,
+    required this.onReview,
+  });
+
+  final List<AppUser> requests;
+  final Future<void> Function(AppUser target, bool approve) onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = (requests.length * 104.0 + 70).clamp(174.0, 360.0).toDouble();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppTheme.warning.withValues(alpha: .11),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(
+                    Icons.how_to_reg_outlined,
+                    color: AppTheme.warning,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Program Coordinator verification requests',
+                        style: TextStyle(
+                          color: AppTheme.navy,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        '${requests.length} request${requests.length == 1 ? '' : 's'} waiting for CAS College Coordinator / SIP Admin review',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: height - 70,
+              child: ListView.separated(
+                itemCount: requests.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = requests[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 650;
+                        final details = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.displayName,
+                              style: const TextStyle(
+                                color: AppTheme.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              item.email,
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Staff ID: ${item.staffId ?? 'Not supplied'}  •  ${item.department ?? 'Department not supplied'}',
+                              style: const TextStyle(
+                                color: AppTheme.text,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                        );
+                        final actions = Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => onReview(item, false),
+                              icon: const Icon(Icons.close_rounded, size: 17),
+                              label: const Text('Reject'),
+                            ),
+                            FilledButton.icon(
+                              onPressed: () => onReview(item, true),
+                              icon: const Icon(Icons.check_rounded, size: 17),
+                              label: const Text('Approve'),
+                            ),
+                          ],
+                        );
+                        if (compact) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              details,
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: actions,
+                              ),
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            Expanded(child: details),
+                            const SizedBox(width: 16),
+                            actions,
+                          ],
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({
+    required this.item,
+    required this.studentsOnly,
+    required this.currentUser,
+    this.onAssignCoordinator,
+    this.onUnassignCoordinator,
+    this.onActiveChanged,
+  });
+
+  final AppUser item;
+  final bool studentsOnly;
+  final AppUser currentUser;
+  final VoidCallback? onAssignCoordinator;
+  final VoidCallback? onUnassignCoordinator;
+  final ValueChanged<bool>? onActiveChanged;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final identity = Row(
+            children: [
+              CircleAvatar(
+                child: Text(
+                  item.displayName.isEmpty
+                      ? '?'
+                      : item.displayName[0].toUpperCase(),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.displayName,
+                      style: const TextStyle(
+                        color: AppTheme.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      item.email,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    if (item.studentNumber != null)
+                      Text(
+                        'Student no. ${item.studentNumber}',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    if (!studentsOnly && item.staffId != null)
+                      Text(
+                        'Staff ID ${item.staffId} • ${item.department ?? 'No department'}',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    if (studentsOnly)
+                      Text(
+                        'Coordinator: ${item.coordinatorName ?? 'Unassigned'}',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          final controls = studentsOnly
+              ? Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _AccountStatusChip(item: item),
+                    PopupMenuButton<String>(
+                      tooltip: 'Coordinator assignment',
+                      onSelected: (value) async {
+                        if (value == 'assign') {
+                          onAssignCoordinator?.call();
+                        } else {
+                          onUnassignCoordinator?.call();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'assign',
+                          child: Text(
+                            currentUser.role == UserRole.coordinator
+                                ? 'Assign to me'
+                                : 'Assign coordinator',
+                          ),
+                        ),
+                        if (item.coordinatorId != null)
+                          const PopupMenuItem(
+                            value: 'unassign',
+                            child: Text('Remove assignment'),
+                          ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _AccountStatusChip(item: item),
+                    const SizedBox(width: 10),
+                    Switch(
+                      value: item.active,
+                      onChanged: onActiveChanged,
+                    ),
+                  ],
+                );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                identity,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: controls),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: identity),
+              const SizedBox(width: 16),
+              controls,
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _AccountStatusChip extends StatelessWidget {
+  const _AccountStatusChip({required this.item});
+
+  final AppUser item;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = item.isRejectedCoordinator
+        ? ('Rejected', AppTheme.danger, Icons.cancel_outlined)
+        : !item.active
+        ? ('Inactive', AppTheme.muted, Icons.pause_circle_outline)
+        : item.role == UserRole.coordinator
+        ? ('Program Coordinator', AppTheme.success, Icons.verified_user_outlined)
+        : item.role == UserRole.admin
+        ? ('CAS College Coordinator / SIP Admin', AppTheme.blue, Icons.admin_panel_settings_outlined)
+        : ('Student', AppTheme.blue, Icons.school_outlined);
+    return Chip(
+      avatar: Icon(icon, size: 16, color: color),
+      label: Text(label),
+      backgroundColor: color.withValues(alpha: .08),
+      side: BorderSide(color: color.withValues(alpha: .18)),
     );
   }
 }
@@ -664,6 +1079,7 @@ Future<void> _reviewRequirement(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<ReviewStatus>(
+                isExpanded: true,
                 initialValue: status,
                 decoration: const InputDecoration(labelText: 'Status'),
                 items: ReviewStatus.values
@@ -725,31 +1141,58 @@ class _ModulePage extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Row(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 720;
+      final heading = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(subtitle),
-              ],
+          Text(
+            title,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: AppTheme.navy,
+              fontWeight: FontWeight.w800,
+              fontSize: compact ? 20 : 23,
             ),
           ),
-          if (action != null) action!,
+          const SizedBox(height: 5),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
         ],
-      ),
-      const SizedBox(height: 16),
-      Expanded(child: child),
-    ],
+      );
+
+      final header = action == null
+          ? heading
+          : compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [heading, const SizedBox(height: 12), action!],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: 18),
+                action!,
+              ],
+            );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          const SizedBox(height: 20),
+          Expanded(child: child),
+        ],
+      );
+    },
   );
 }
 
@@ -793,18 +1236,39 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 54, color: Colors.black38),
-            const SizedBox(height: 12),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center),
-          ],
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 440),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceBlue,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, size: 28, color: AppTheme.blue),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+              ),
+            ],
+          ),
         ),
       ),
     ),

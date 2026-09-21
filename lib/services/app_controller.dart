@@ -67,6 +67,35 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<bool> registerCoordinatorRequest({
+    required String email,
+    required String password,
+    required String displayName,
+    required String staffId,
+    required String department,
+  }) async {
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      await auth.registerCoordinatorRequest(
+        email: email,
+        password: password,
+        displayName: displayName,
+        staffId: staffId,
+        department: department,
+      );
+      user = null;
+      return true;
+    } catch (exception) {
+      error = _messageFor(exception);
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> signOut() async {
     busy = true;
     notifyListeners();
@@ -97,8 +126,4 @@ class AppController extends ChangeNotifier {
     return raw.replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }

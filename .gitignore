@@ -17,3 +17,5 @@ firebase-debug.log
 service-account*.json
 config/*.json
 !config/example.json
+node_modules/
+.vercel/

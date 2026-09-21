@@ -44,6 +44,8 @@ class RequirementRecord {
     this.program,
     this.studentNumber,
     this.institutionName,
+    this.coordinatorId,
+    this.academicYear,
     this.dueDate,
     this.reviewedAt,
     this.reviewedBy,
@@ -65,6 +67,8 @@ class RequirementRecord {
   final String? program;
   final String? studentNumber;
   final String? institutionName;
+  final String? coordinatorId;
+  final String? academicYear;
   final DateTime? dueDate;
   final DateTime? reviewedAt;
   final String? reviewedBy;
@@ -91,6 +95,8 @@ class RequirementRecord {
       program: data['program'] as String?,
       studentNumber: data['studentNumber'] as String?,
       institutionName: data['institutionName'] as String?,
+      coordinatorId: data['coordinatorId'] as String?,
+      academicYear: data['academicYear'] as String?,
       dueDate: (data['dueDate'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
       reviewedBy: data['reviewedBy'] as String?,
@@ -111,6 +117,8 @@ class DtrRecord {
     required this.breakMinutes,
     required this.status,
     this.remarks,
+    this.coordinatorId,
+    this.academicYear,
     this.archived = false,
   });
 
@@ -123,6 +131,8 @@ class DtrRecord {
   final int breakMinutes;
   final ReviewStatus status;
   final String? remarks;
+  final String? coordinatorId;
+  final String? academicYear;
   final bool archived;
 
   double get renderedHours {
@@ -143,6 +153,8 @@ class DtrRecord {
       breakMinutes: (data['breakMinutes'] as num?)?.toInt() ?? 0,
       status: ReviewStatusLabel.parse(data['status'] as String?),
       remarks: data['remarks'] as String?,
+      coordinatorId: data['coordinatorId'] as String?,
+      academicYear: data['academicYear'] as String?,
       archived: data['archived'] as bool? ?? false,
     );
   }
@@ -160,6 +172,10 @@ class NotificationRecord {
     this.targetUserId,
     this.type = 'general',
     this.relatedId,
+    this.priority = 'normal',
+    this.scheduledFor,
+    this.linkUrl,
+    this.createdBy,
     this.readBy = const [],
   });
 
@@ -173,7 +189,14 @@ class NotificationRecord {
   final String? targetUserId;
   final String type;
   final String? relatedId;
+  final String priority;
+  final DateTime? scheduledFor;
+  final String? linkUrl;
+  final String? createdBy;
   final List<String> readBy;
+
+  bool get isDue =>
+      scheduledFor == null || !scheduledFor!.isAfter(DateTime.now());
 
   bool isReadBy(String userId) => read || readBy.contains(userId);
 
@@ -192,9 +215,65 @@ class NotificationRecord {
       targetUserId: data['targetUserId'] as String?,
       type: data['type'] as String? ?? 'general',
       relatedId: data['relatedId'] as String?,
+      priority: data['priority'] as String? ?? 'normal',
+      scheduledFor: (data['scheduledFor'] as Timestamp?)?.toDate(),
+      linkUrl: data['linkUrl'] as String?,
+      createdBy: data['createdBy'] as String?,
       readBy: (data['readBy'] as List<dynamic>? ?? const [])
           .whereType<String>()
           .toList(),
+    );
+  }
+}
+
+class PartnerInstitutionRecord {
+  const PartnerInstitutionRecord({
+    required this.id,
+    required this.name,
+    this.address = '',
+    this.institutionType = '',
+    this.industryField = '',
+    this.contactName = '',
+    this.contactEmail = '',
+    this.contactPhone = '',
+    this.programs = const [],
+    this.status = 'Active',
+    this.remarks = '',
+    this.createdAt,
+  });
+
+  final String id;
+  final String name;
+  final String address;
+  final String institutionType;
+  final String industryField;
+  final String contactName;
+  final String contactEmail;
+  final String contactPhone;
+  final List<String> programs;
+  final String status;
+  final String remarks;
+  final DateTime? createdAt;
+
+  factory PartnerInstitutionRecord.fromDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? const <String, dynamic>{};
+    return PartnerInstitutionRecord(
+      id: doc.id,
+      name: data['name'] as String? ?? 'Partner Institution',
+      address: data['address'] as String? ?? '',
+      institutionType: data['institutionType'] as String? ?? '',
+      industryField: data['industryField'] as String? ?? '',
+      contactName: data['contactName'] as String? ?? '',
+      contactEmail: data['contactEmail'] as String? ?? '',
+      contactPhone: data['contactPhone'] as String? ?? '',
+      programs: (data['programs'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
+      status: data['status'] as String? ?? 'Active',
+      remarks: data['remarks'] as String? ?? '',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 }
@@ -206,6 +285,7 @@ class MoaRecord {
     required this.moaNumber,
     required this.startDate,
     required this.endDate,
+    this.partnerId,
     this.storagePath,
     this.fileName,
     this.programs = const [],
@@ -222,6 +302,7 @@ class MoaRecord {
   final String moaNumber;
   final DateTime startDate;
   final DateTime endDate;
+  final String? partnerId;
   final String? storagePath;
   final String? fileName;
   final List<String> programs;
@@ -252,6 +333,7 @@ class MoaRecord {
       moaNumber: data['moaNumber'] as String? ?? '',
       startDate: (data['startDate'] as Timestamp?)?.toDate() ?? now,
       endDate: (data['endDate'] as Timestamp?)?.toDate() ?? now,
+      partnerId: data['partnerId'] as String?,
       storagePath: data['storagePath'] as String?,
       fileName: data['fileName'] as String?,
       programs: (data['programs'] as List<dynamic>? ?? const [])
@@ -310,6 +392,8 @@ class SupervisorEvaluationRecord {
     this.ratings = const {},
     this.comments,
     this.submittedAt,
+    this.coordinatorId,
+    this.academicYear,
     this.archived = false,
   });
 
@@ -325,6 +409,8 @@ class SupervisorEvaluationRecord {
   final Map<String, int> ratings;
   final String? comments;
   final DateTime? submittedAt;
+  final String? coordinatorId;
+  final String? academicYear;
   final bool archived;
 
   bool get submitted => status == 'submitted';
@@ -332,7 +418,7 @@ class SupervisorEvaluationRecord {
 
   double get averageRating => ratings.isEmpty
       ? 0
-      : ratings.values.fold<int>(0, (sum, value) => sum + value) /
+      : ratings.values.fold<int>(0, (total, value) => total + value) /
             ratings.length;
 
   factory SupervisorEvaluationRecord.fromDoc(
@@ -355,6 +441,8 @@ class SupervisorEvaluationRecord {
       ),
       comments: data['comments'] as String?,
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
+      coordinatorId: data['coordinatorId'] as String?,
+      academicYear: data['academicYear'] as String?,
       archived: data['archived'] as bool? ?? false,
     );
   }
@@ -402,4 +490,44 @@ class AcademicArchiveContents {
   final List<RequirementRecord> requirements;
   final List<DtrRecord> dtr;
   final List<SupervisorEvaluationRecord> evaluations;
+}
+
+
+class PublicEvaluationAccessRecord {
+  const PublicEvaluationAccessRecord({
+    required this.token,
+    required this.studentName,
+    required this.companyName,
+    required this.supervisorName,
+    required this.status,
+    required this.expiresAt,
+    required this.archived,
+    this.submittedAt,
+  });
+
+  final String token;
+  final String studentName;
+  final String companyName;
+  final String supervisorName;
+  final String status;
+  final DateTime expiresAt;
+  final bool archived;
+  final DateTime? submittedAt;
+
+  bool get submitted => status == 'submitted';
+  bool get expired => !submitted && expiresAt.isBefore(DateTime.now());
+
+  factory PublicEvaluationAccessRecord.fromJson(Map<String, dynamic> data) {
+    return PublicEvaluationAccessRecord(
+      token: data['token'] as String? ?? '',
+      studentName: data['studentName'] as String? ?? 'Student Intern',
+      companyName: data['companyName'] as String? ?? '',
+      supervisorName: data['supervisorName'] as String? ?? 'Industry Supervisor',
+      status: data['status'] as String? ?? 'pending',
+      expiresAt: DateTime.tryParse(data['expiresAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      archived: data['archived'] as bool? ?? false,
+      submittedAt: DateTime.tryParse(data['submittedAt'] as String? ?? ''),
+    );
+  }
 }

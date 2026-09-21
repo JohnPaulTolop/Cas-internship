@@ -1,5 +1,6 @@
 {
   "SUPABASE_URL": "https://replace-me.supabase.co",
   "SUPABASE_PUBLISHABLE_KEY": "replace-me",
-  "SUPABASE_BUCKET": "internship-documents"
+  "SUPABASE_BUCKET": "internship-documents",
+  "COORDINATOR_APPROVAL_API_URL": "http://localhost:8787/api/coordinator-approval"
 }

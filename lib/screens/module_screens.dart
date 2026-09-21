@@ -8,13 +8,17 @@ import '../models/app_feature.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
+import 'account_settings_screen.dart';
 import 'advanced_reports_screen.dart';
+import 'archived_records_screen.dart';
 import 'coordinator_dashboard_screen.dart';
 import 'document_workflow_screens.dart';
+import 'evaluation_management_screen.dart';
 import 'dynamic_screens.dart';
 import 'moa_management_screen.dart';
 import 'notification_panel_screen.dart';
 import 'student_profile_screen.dart';
+import 'workflow_shared.dart';
 
 class ModuleRouter extends StatelessWidget {
   const ModuleRouter({
@@ -49,7 +53,10 @@ class ModuleRouter extends StatelessWidget {
             : DocumentReviewScreen(user: user, repository: repository),
       AppFeature.requirements =>
         user.role == UserRole.student
-            ? DocumentSubmissionBinScreen(user: user, repository: repository)
+            ? StudentRequirementsChecklistScreen(
+                user: user,
+                repository: repository,
+              )
             : RequirementDefinitionAdminScreen(
                 user: user,
                 repository: repository,
@@ -58,16 +65,30 @@ class ModuleRouter extends StatelessWidget {
         user: user,
         repository: repository,
       ),
-      AppFeature.repository => DocumentRepositoryScreen(
+      AppFeature.repository =>
+        user.role == UserRole.student
+            ? DocumentSubmissionBinScreen(
+                user: user,
+                repository: repository,
+              )
+            : DocumentRepositoryScreen(
+                user: user,
+                repository: repository,
+              ),
+      AppFeature.dtr => DtrScreen(user: user, repository: repository),
+      AppFeature.notifications =>
+        user.role == UserRole.admin
+            ? NotificationsScreen(user: user, repository: repository)
+            : StudentNotificationPanelScreen(user: user, repository: repository),
+      AppFeature.reports => AdvancedReportsScreen(
         user: user,
         repository: repository,
       ),
-      AppFeature.dtr => DtrScreen(user: user, repository: repository),
-      AppFeature.notifications =>
-        user.role == UserRole.student
-            ? StudentNotificationPanelScreen(user: user, repository: repository)
-            : NotificationsScreen(user: user, repository: repository),
-      AppFeature.reports => AdvancedReportsScreen(
+      AppFeature.archivedRecords => ArchivedRecordsScreen(
+        user: user,
+        repository: repository,
+      ),
+      AppFeature.evaluations => EvaluationManagementScreen(
         user: user,
         repository: repository,
       ),
@@ -84,6 +105,7 @@ class ModuleRouter extends StatelessWidget {
         studentsOnly: false,
       ),
       AppFeature.audit => AuditLogScreen(repository: repository),
+      AppFeature.settings => AccountSettingsScreen(user: user),
     };
   }
 }
@@ -542,6 +564,7 @@ class RequirementsScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<ReviewStatus>(
+                  isExpanded: true,
                   initialValue: status,
                   decoration: const InputDecoration(labelText: 'Status'),
                   items: ReviewStatus.values
@@ -713,12 +736,16 @@ class DtrScreen extends StatelessWidget {
     children: [
       _ModuleHeader(
         title: 'Daily Time Records',
-        subtitle: 'Monitor attendance entries and calculated rendered hours.',
-        action: FilledButton.icon(
-          onPressed: () => _showAddDialog(context),
-          icon: const Icon(Icons.add_alarm_outlined),
-          label: const Text('Add time record'),
-        ),
+        subtitle: user.role == UserRole.student
+            ? 'Record your daily attendance, submit it for review, and monitor approved rendered hours.'
+            : 'Review assigned interns\' Daily Time Records and monitor approved rendered hours.',
+        action: user.role == UserRole.student
+            ? FilledButton.icon(
+                onPressed: () => _showAddDialog(context),
+                icon: const Icon(Icons.add_alarm_outlined),
+                label: const Text('New DTR entry'),
+              )
+            : null,
       ),
       const SizedBox(height: 16),
       Expanded(
@@ -730,16 +757,31 @@ class DtrScreen extends StatelessWidget {
             }
             final records = snapshot.data ?? const <DtrRecord>[];
             if (records.isEmpty) {
-              return const _EmptyState(
+              return _EmptyState(
                 icon: Icons.punch_clock_outlined,
                 title: 'No time records',
-                message: 'Create the first DTR entry for an assigned student.',
+                message: user.role == UserRole.student
+                    ? 'Create your first Daily Time Record entry.'
+                    : 'Submitted DTR entries from assigned interns will appear here.',
               );
             }
-            final total = records.fold<double>(
+            final approved = records
+                .where((item) => item.status == ReviewStatus.verified)
+                .toList();
+            final total = approved.fold<double>(
               0,
               (sum, item) => sum + item.renderedHours,
             );
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final weekStart = today.subtract(Duration(days: today.weekday - 1));
+            final monthStart = DateTime(now.year, now.month, 1);
+            final weekly = approved
+                .where((item) => !item.date.isBefore(weekStart))
+                .fold<double>(0, (sum, item) => sum + item.renderedHours);
+            final monthly = approved
+                .where((item) => !item.date.isBefore(monthStart))
+                .fold<double>(0, (sum, item) => sum + item.renderedHours);
             return ListView(
               children: [
                 _ResponsiveStats(
@@ -751,7 +793,19 @@ class DtrScreen extends StatelessWidget {
                       AppTheme.blue,
                     ),
                     _StatData(
-                      'Rendered hours',
+                      'Weekly Hours',
+                      weekly.toStringAsFixed(1),
+                      Icons.view_week_outlined,
+                      const Color(0xFF2584D8),
+                    ),
+                    _StatData(
+                      'Monthly Hours',
+                      monthly.toStringAsFixed(1),
+                      Icons.calendar_month_outlined,
+                      const Color(0xFF8E44AD),
+                    ),
+                    _StatData(
+                      'Total Approved Hours',
                       total.toStringAsFixed(1),
                       Icons.timelapse_outlined,
                       const Color(0xFF27AE60),
@@ -795,14 +849,31 @@ class DtrScreen extends StatelessWidget {
                                 DataCell(_StatusChip(status: item.status)),
                                 DataCell(Text(item.remarks ?? '—')),
                                 DataCell(
-                                  IconButton(
-                                    tooltip: 'Review time record',
-                                    onPressed: () =>
-                                        _showReviewDialog(context, item),
-                                    icon: const Icon(
-                                      Icons.rate_review_outlined,
-                                    ),
-                                  ),
+                                  user.role == UserRole.student
+                                      ? IconButton(
+                                          tooltip:
+                                              item.status == ReviewStatus.needsRevision ||
+                                                      item.status == ReviewStatus.rejected
+                                                  ? 'Correct and resubmit'
+                                                  : 'Awaiting coordinator review',
+                                          onPressed:
+                                              item.status == ReviewStatus.needsRevision ||
+                                                      item.status == ReviewStatus.rejected
+                                                  ? () => _showAddDialog(
+                                                        context,
+                                                        record: item,
+                                                      )
+                                                  : null,
+                                          icon: const Icon(Icons.edit_outlined),
+                                        )
+                                      : IconButton(
+                                          tooltip: 'Review time record',
+                                          onPressed: () =>
+                                              _showReviewDialog(context, item),
+                                          icon: const Icon(
+                                            Icons.rate_review_outlined,
+                                          ),
+                                        ),
                                 ),
                               ],
                             ),
@@ -819,54 +890,41 @@ class DtrScreen extends StatelessWidget {
     ],
   );
 
-  Future<void> _showAddDialog(BuildContext context) async {
-    final students = (await repository.watchUsers(role: UserRole.student).first)
-        .where((student) => student.active)
-        .toList();
-    if (!context.mounted) return;
-    if (students.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Create an active student account first.'),
-        ),
-      );
-      return;
-    }
-    AppUser selectedStudent = students.first;
-    final breakMinutes = TextEditingController(text: '60');
-    var selectedDate = DateTime.now();
-    var timeIn = const TimeOfDay(hour: 8, minute: 0);
-    var timeOut = const TimeOfDay(hour: 17, minute: 0);
+  Future<void> _showAddDialog(
+    BuildContext context, {
+    DtrRecord? record,
+  }) async {
+    if (user.role != UserRole.student) return;
+
+    final breakMinutes = TextEditingController(
+      text: '${record?.breakMinutes ?? 60}',
+    );
+    var selectedDate = record?.date ?? DateTime.now();
+    var timeIn = record == null
+        ? const TimeOfDay(hour: 8, minute: 0)
+        : TimeOfDay.fromDateTime(record.timeIn);
+    var timeOut = record == null
+        ? const TimeOfDay(hour: 17, minute: 0)
+        : TimeOfDay.fromDateTime(record.timeOut);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add DTR entry'),
+          title: Text(record == null ? 'New Daily Time Record' : 'Correct Daily Time Record'),
           content: SizedBox(
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<AppUser>(
-                  initialValue: selectedStudent,
-                  decoration: const InputDecoration(labelText: 'Student'),
-                  items: students
-                      .map(
-                        (student) => DropdownMenuItem(
-                          value: student,
-                          child: Text(
-                            '${student.displayName} (${student.studentNumber ?? student.email})',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() => selectedStudent = value);
-                    }
-                  },
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.person_outline),
+                  ),
+                  title: Text(user.displayName),
+                  subtitle: Text(user.studentNumber ?? user.email),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
                     final value = await showDatePicker(
@@ -922,7 +980,11 @@ class DtrScreen extends StatelessWidget {
                 TextField(
                   controller: breakMinutes,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Break minutes'),
+                  decoration: const InputDecoration(
+                    labelText: 'Break minutes',
+                    helperText:
+                        'Rendered hours are calculated automatically after subtracting the break.',
+                  ),
                 ),
               ],
             ),
@@ -932,7 +994,7 @@ class DtrScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () async {
                 final start = DateTime(
                   selectedDate.year,
@@ -949,15 +1011,26 @@ class DtrScreen extends StatelessWidget {
                   timeOut.minute,
                 );
                 try {
-                  await repository.addDtrEntry(
-                    actor: user,
-                    studentId: selectedStudent.uid,
-                    studentName: selectedStudent.displayName,
-                    date: selectedDate,
-                    timeIn: start,
-                    timeOut: end,
-                    breakMinutes: int.tryParse(breakMinutes.text) ?? 0,
-                  );
+                  if (record == null) {
+                    await repository.addDtrEntry(
+                      actor: user,
+                      studentId: user.uid,
+                      studentName: user.displayName,
+                      date: selectedDate,
+                      timeIn: start,
+                      timeOut: end,
+                      breakMinutes: int.tryParse(breakMinutes.text) ?? 0,
+                    );
+                  } else {
+                    await repository.updateDtrEntry(
+                      student: user,
+                      record: record,
+                      date: selectedDate,
+                      timeIn: start,
+                      timeOut: end,
+                      breakMinutes: int.tryParse(breakMinutes.text) ?? 0,
+                    );
+                  }
                   if (dialogContext.mounted) {
                     Navigator.pop(dialogContext);
                   }
@@ -969,7 +1042,8 @@ class DtrScreen extends StatelessWidget {
                   }
                 }
               },
-              child: const Text('Save'),
+              icon: const Icon(Icons.send_outlined),
+              label: Text(record == null ? 'Submit DTR' : 'Resubmit correction'),
             ),
           ],
         ),
@@ -992,6 +1066,7 @@ class DtrScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<ReviewStatus>(
+                  isExpanded: true,
                   initialValue: status,
                   decoration: const InputDecoration(labelText: 'Status'),
                   items: ReviewStatus.values
@@ -1042,162 +1117,468 @@ class DtrScreen extends StatelessWidget {
   }
 }
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({
     super.key,
     required this.user,
     required this.repository,
   });
+
   final AppUser user;
   final PracticumRepository repository;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      _ModuleHeader(
-        title: 'Messages & notifications',
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<NotificationRecord>>(
+    stream: widget.repository.watchNotifications(widget.user),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _ErrorState(error: snapshot.error!);
+      }
+      final all = snapshot.data ?? const <NotificationRecord>[];
+      final records = all.where((item) {
+        if (_query.isEmpty) return true;
+        final haystack =
+            '${item.title} ${item.message} ${item.targetRole} ${item.priority}'
+                .toLowerCase();
+        return haystack.contains(_query);
+      }).toList();
+      final active = all.where((item) => item.active && item.isDue).length;
+      final scheduled = all
+          .where((item) => item.active && item.scheduledFor != null && !item.isDue)
+          .length;
+
+      return WorkflowPage(
+        title: 'Notification Management',
         subtitle:
-            'Publish role-targeted notices and review recent delivery content.',
-        action: FilledButton.icon(
-          onPressed: () => _showCreateDialog(context),
-          icon: const Icon(Icons.add_alert_outlined),
-          label: const Text('Create notification'),
-        ),
-      ),
-      const SizedBox(height: 16),
-      Expanded(
-        child: StreamBuilder<List<NotificationRecord>>(
-          stream: repository.watchNotifications(user),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return _ErrorState(error: snapshot.error!);
-            }
-            final records = snapshot.data ?? const <NotificationRecord>[];
-            if (records.isEmpty) {
-              return const _EmptyState(
-                icon: Icons.notifications_off_outlined,
-                title: 'No notifications',
-                message: 'New notices will appear here.',
-              );
-            }
-            return ListView.separated(
-              itemCount: records.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final item = records[index];
-                return Card(
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(18),
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.notifications_active_outlined),
-                    ),
-                    title: Text(
-                      item.title,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${item.message}\n${DateFormat.yMMMd().add_jm().format(item.createdAt)}',
-                    ),
-                    isThreeLine: true,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Chip(label: Text(item.targetRole.toUpperCase())),
-                        Switch(
-                          value: item.active,
-                          onChanged: (active) async {
-                            await repository.setNotificationActive(
-                              actor: user,
-                              notification: item,
-                              active: active,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
+            'Create, schedule, edit, deactivate, delete, and review delivery activity for internship notifications.',
+        eyebrow: 'Administration  ›  Notifications',
+        actions: [
+          FilledButton.icon(
+            onPressed: () => _showEditor(context),
+            icon: const Icon(Icons.add_alert_outlined),
+            label: const Text('Create Notification'),
+          ),
+        ],
+        child: Column(
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                StatCard(
+                  label: 'Total Notifications',
+                  value: '${all.length}',
+                  icon: Icons.notifications_outlined,
+                ),
+                StatCard(
+                  label: 'Active / Sent',
+                  value: '$active',
+                  icon: Icons.send_outlined,
+                ),
+                StatCard(
+                  label: 'Scheduled',
+                  value: '$scheduled',
+                  icon: Icons.schedule_outlined,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search_rounded),
+                    hintText: 'Search title, message, audience, or priority',
                   ),
-                );
-              },
-            );
-          },
+                  onChanged: (value) =>
+                      setState(() => _query = value.trim().toLowerCase()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: records.isEmpty
+                  ? const _EmptyState(
+                      icon: Icons.notifications_off_outlined,
+                      title: 'No notifications found',
+                      message: 'Create a notification or adjust the search.',
+                    )
+                  : ListView.separated(
+                      itemCount: records.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final item = records[index];
+                        final state = !item.active
+                            ? 'Inactive'
+                            : item.scheduledFor != null && !item.isDue
+                            ? 'Scheduled'
+                            : 'Sent';
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceBlue,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.notifications_active_outlined,
+                                    color: AppTheme.blue,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            item.title,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          Chip(
+                                            visualDensity: VisualDensity.compact,
+                                            label: Text(state),
+                                          ),
+                                          Chip(
+                                            visualDensity: VisualDensity.compact,
+                                            label: Text(item.priority.toUpperCase()),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        item.message,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: AppTheme.muted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Audience: ${item.targetRole}  •  '
+                                        '${item.scheduledFor == null ? 'Created' : 'Scheduled'} '
+                                        '${DateFormat.yMMMd().add_jm().format(item.scheduledFor ?? item.createdAt)}  •  '
+                                        'Read by ${item.readBy.length}',
+                                        style: const TextStyle(
+                                          color: AppTheme.muted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuButton<String>(
+                                  tooltip: 'Notification actions',
+                                  onSelected: (value) async {
+                                    if (value == 'edit') {
+                                      await _showEditor(context, existing: item);
+                                    } else if (value == 'toggle') {
+                                      await widget.repository.setNotificationActive(
+                                        actor: widget.user,
+                                        notification: item,
+                                        active: !item.active,
+                                      );
+                                    } else if (value == 'delete') {
+                                      await _confirmDelete(context, item);
+                                    }
+                                  },
+                                  itemBuilder: (context) => [
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('Edit'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'toggle',
+                                      child: Text(
+                                        item.active ? 'Deactivate' : 'Activate',
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
-      ),
-    ],
+      );
+    },
   );
 
-  Future<void> _showCreateDialog(BuildContext context) async {
-    final title = TextEditingController();
-    final message = TextEditingController();
-    var target = 'student';
+  Future<void> _showEditor(
+    BuildContext context, {
+    NotificationRecord? existing,
+  }) async {
+    final title = TextEditingController(text: existing?.title);
+    final message = TextEditingController(text: existing?.message);
+    final link = TextEditingController(text: existing?.linkUrl);
+    var target = existing?.targetRole ?? 'student';
+    if (target.startsWith('user:')) target = 'student';
+    var priority = existing?.priority ?? 'normal';
+    DateTime? scheduledFor = existing?.scheduledFor;
+    var saving = false;
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create notification'),
+          title: Text(
+            existing == null ? 'Create notification' : 'Edit notification',
+          ),
           content: SizedBox(
-            width: 500,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(labelText: 'Title'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: message,
-                  maxLines: 4,
-                  decoration: const InputDecoration(labelText: 'Message'),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: target,
-                  decoration: const InputDecoration(labelText: 'Audience'),
-                  items: const [
-                    DropdownMenuItem(value: 'student', child: Text('Students')),
-                    DropdownMenuItem(
-                      value: 'coordinator',
-                      child: Text('Coordinators'),
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: title,
+                    decoration: const InputDecoration(labelText: 'Title'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: message,
+                    maxLines: 4,
+                    decoration: const InputDecoration(labelText: 'Message'),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: target,
+                          decoration: const InputDecoration(labelText: 'Audience'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'student',
+                              child: Text('Student Interns'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'coordinator',
+                              child: Text('Program Coordinators'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'all',
+                              child: Text('All signed-in users'),
+                            ),
+                          ],
+                          onChanged: existing == null
+                              ? (value) => setDialogState(
+                                    () => target = value ?? 'student',
+                                  )
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: priority,
+                          decoration: const InputDecoration(labelText: 'Priority'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'normal',
+                              child: Text('Normal'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'high',
+                              child: Text('High'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'urgent',
+                              child: Text('Urgent'),
+                            ),
+                          ],
+                          onChanged: (value) => setDialogState(
+                            () => priority = value ?? 'normal',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: link,
+                    decoration: const InputDecoration(
+                      labelText: 'Related link (optional)',
                     ),
-                    DropdownMenuItem(value: 'all', child: Text('All users')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() => target = value);
-                    }
-                  },
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final date = await showDatePicker(
+                              context: context,
+                              firstDate: DateTime(now.year - 1),
+                              lastDate: DateTime(now.year + 3),
+                              initialDate: scheduledFor ?? now,
+                            );
+                            if (date == null || !context.mounted) return;
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: scheduledFor == null
+                                  ? TimeOfDay.fromDateTime(now)
+                                  : TimeOfDay.fromDateTime(scheduledFor!),
+                            );
+                            if (time == null) return;
+                            setDialogState(() {
+                              scheduledFor = DateTime(
+                                date.year,
+                                date.month,
+                                date.day,
+                                time.hour,
+                                time.minute,
+                              );
+                            });
+                          },
+                          icon: const Icon(Icons.schedule_outlined),
+                          label: Text(
+                            scheduledFor == null
+                                ? 'Send immediately'
+                                : DateFormat.yMMMd()
+                                    .add_jm()
+                                    .format(scheduledFor!),
+                          ),
+                        ),
+                      ),
+                      if (scheduledFor != null) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Send immediately instead',
+                          onPressed: () =>
+                              setDialogState(() => scheduledFor = null),
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () async {
-                if (title.text.trim().isEmpty || message.text.trim().isEmpty) {
-                  return;
-                }
-                await repository.sendNotification(
-                  actor: user,
-                  title: title.text.trim(),
-                  message: message.text.trim(),
-                  targetRole: target,
-                );
-                if (dialogContext.mounted) {
-                  Navigator.pop(dialogContext);
-                }
-              },
-              child: const Text('Publish'),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (title.text.trim().isEmpty ||
+                          message.text.trim().isEmpty) {
+                        return;
+                      }
+                      setDialogState(() => saving = true);
+                      try {
+                        if (existing == null) {
+                          await widget.repository.sendNotification(
+                            actor: widget.user,
+                            title: title.text,
+                            message: message.text,
+                            targetRole: target,
+                            priority: priority,
+                            scheduledFor: scheduledFor,
+                            linkUrl: link.text,
+                          );
+                        } else {
+                          await widget.repository.updateNotification(
+                            actor: widget.user,
+                            notification: existing,
+                            title: title.text,
+                            message: message.text,
+                            priority: priority,
+                            scheduledFor: scheduledFor,
+                            linkUrl: link.text,
+                          );
+                        }
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                      } catch (error) {
+                        setDialogState(() => saving = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('$error')),
+                          );
+                        }
+                      }
+                    },
+              child: Text(existing == null ? 'Publish' : 'Save changes'),
             ),
           ],
         ),
       ),
     );
+
     title.dispose();
     message.dispose();
+    link.dispose();
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    NotificationRecord item,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete notification?'),
+        content: Text(
+          'Delete “${item.title}”? This removes the notification from the dashboard.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await widget.repository.deleteNotification(
+        actor: widget.user,
+        notification: item,
+      );
+    }
   }
 }
 
@@ -1212,28 +1593,51 @@ class _ModuleHeader extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 16,
-    runSpacing: 12,
-    children: [
-      Column(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 720;
+      final heading = ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: AppTheme.navy,
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 20 : 23,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      );
+      if (action == null) return heading;
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [heading, const SizedBox(height: 12), action!],
+        );
+      }
+      return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: AppTheme.navy,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(subtitle),
+          Expanded(child: heading),
+          const SizedBox(width: 18),
+          action!,
         ],
-      ),
-      ?action,
-    ],
+      );
+    },
   );
 }
 
@@ -1244,14 +1648,14 @@ class _ResponsiveStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final width = constraints.maxWidth >= 1100
-          ? (constraints.maxWidth - (cards.length - 1) * 14) / cards.length
+      final width = constraints.maxWidth >= 1040
+          ? (constraints.maxWidth - (cards.length - 1) * 16) / cards.length
           : constraints.maxWidth >= 600
-          ? (constraints.maxWidth - 14) / 2
+          ? (constraints.maxWidth - 16) / 2
           : constraints.maxWidth;
       return Wrap(
-        spacing: 14,
-        runSpacing: 14,
+        spacing: 16,
+        runSpacing: 16,
         children: cards
             .map(
               (card) => SizedBox(
@@ -1280,17 +1684,18 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 25,
+            radius: 23,
             backgroundColor: data.color.withValues(alpha: 0.12),
             foregroundColor: data.color,
             child: Icon(data.icon),
           ),
-          const SizedBox(width: 16),
-          Column(
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -1301,8 +1706,14 @@ class _StatCard extends StatelessWidget {
                   color: AppTheme.navy,
                 ),
               ),
-              Text(data.label, style: const TextStyle(color: Colors.black54)),
+              Text(
+                data.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+              ),
             ],
+          ),
           ),
         ],
       ),
@@ -1381,9 +1792,18 @@ class _ErrorState extends StatelessWidget {
   final Object error;
 
   @override
-  Widget build(BuildContext context) => _EmptyState(
-    icon: Icons.error_outline,
-    title: 'Unable to load this module',
-    message: '$error',
-  );
+  Widget build(BuildContext context) {
+    final raw = '$error';
+    final permissionDenied = raw.contains('permission-denied') ||
+        raw.toLowerCase().contains('insufficient permissions');
+    return _EmptyState(
+      icon: Icons.error_outline,
+      title: 'Unable to load this module',
+      message: permissionDenied
+          ? 'Firestore denied access to this module. Deploy the updated '
+              'firestore.rules, then sign out and sign back in so the latest '
+              'coordinator permissions are used.'
+          : raw,
+    );
+  }
 }

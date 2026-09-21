@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
+import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import '../services/report_export_service.dart';
+import 'workflow_shared.dart';
 
 class AdvancedReportsScreen extends StatefulWidget {
   const AdvancedReportsScreen({
@@ -22,135 +24,312 @@ class AdvancedReportsScreen extends StatefulWidget {
 }
 
 class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
+  String _reportType = 'Student Summary';
+  String _program = 'All Programs';
+  String _academicYear = 'All Academic Years';
+  String _status = 'All Statuses';
+  String _query = '';
   DateTimeRange? _range;
+  bool _exporting = false;
 
-  AppUser get user => widget.user;
-  PracticumRepository get repository => widget.repository;
+  static const _reportTypes = <String>[
+    'Student Summary',
+    'Student Deployment',
+    'Document Verification',
+    'DTR & Hours',
+    'Supervisor Evaluations',
+    'Partner & MOA',
+  ];
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<RequirementRecord>>(
-    stream: repository.watchRequirements(user),
-    builder: (context, requirementSnapshot) => StreamBuilder<List<DtrRecord>>(
-      stream: repository.watchDtr(user),
-      builder: (context, dtrSnapshot) =>
-          StreamBuilder<List<SupervisorEvaluationRecord>>(
-            stream: repository.watchEvaluations(),
+  Widget build(BuildContext context) => StreamBuilder<List<AppUser>>(
+    stream: widget.repository.watchStudentsFor(widget.user),
+    builder: (context, studentSnapshot) =>
+        StreamBuilder<List<InternshipProfileRecord>>(
+      stream: widget.repository.watchInternshipProfilesFor(widget.user),
+      builder: (context, profileSnapshot) =>
+          StreamBuilder<List<RequirementRecord>>(
+        stream: widget.repository.watchRequirements(widget.user),
+        builder: (context, requirementSnapshot) =>
+            StreamBuilder<List<DtrRecord>>(
+          stream: widget.repository.watchDtr(widget.user),
+          builder: (context, dtrSnapshot) =>
+              StreamBuilder<List<SupervisorEvaluationRecord>>(
+            stream: widget.repository.watchEvaluationsFor(widget.user),
             builder: (context, evaluationSnapshot) =>
-                StreamBuilder<List<AcademicArchiveRecord>>(
-                  stream: repository.watchAcademicArchives(),
-                  builder: (context, archiveSnapshot) {
-                    final error =
-                        requirementSnapshot.error ??
-                        dtrSnapshot.error ??
-                        evaluationSnapshot.error ??
-                        archiveSnapshot.error;
-                    if (error != null) {
-                      return Center(
-                        child: Text('Unable to load reports: $error'),
-                      );
-                    }
-                    final requirements =
-                        (requirementSnapshot.data ??
-                                const <RequirementRecord>[])
-                            .where((record) => _includes(record.submittedAt))
-                            .toList();
-                    final dtr = (dtrSnapshot.data ?? const <DtrRecord>[])
-                        .where((record) => _includes(record.date))
-                        .toList();
-                    final evaluations =
-                        (evaluationSnapshot.data ??
-                                const <SupervisorEvaluationRecord>[])
-                            .where((record) => _includes(record.createdAt))
-                            .toList();
-                    final archives =
-                        archiveSnapshot.data ?? const <AcademicArchiveRecord>[];
-                    final exporter = const ReportExportService();
-                    final rows = exporter.buildRows(
-                      requirements: requirements,
-                      dtr: dtr,
-                      evaluations: evaluations,
-                    );
-                    final verified = requirements
+                StreamBuilder<List<MoaRecord>>(
+              stream: widget.repository.watchMoas(),
+              builder: (context, moaSnapshot) =>
+                  StreamBuilder<List<PartnerInstitutionRecord>>(
+                stream: widget.repository.watchPartnerInstitutions(),
+                builder: (context, partnerSnapshot) {
+                  final error = studentSnapshot.error ??
+                      profileSnapshot.error ??
+                      requirementSnapshot.error ??
+                      dtrSnapshot.error ??
+                      evaluationSnapshot.error ??
+                      moaSnapshot.error ??
+                      partnerSnapshot.error;
+                  if (error != null) {
+                    return Center(child: Text('Unable to load reports: $error'));
+                  }
+
+                  final students = studentSnapshot.data ?? const <AppUser>[];
+                  final profiles = profileSnapshot.data ??
+                      const <InternshipProfileRecord>[];
+                  final requirements = requirementSnapshot.data ??
+                      const <RequirementRecord>[];
+                  final dtr = dtrSnapshot.data ?? const <DtrRecord>[];
+                  final evaluations = evaluationSnapshot.data ??
+                      const <SupervisorEvaluationRecord>[];
+                  final moas = moaSnapshot.data ?? const <MoaRecord>[];
+                  final partners = partnerSnapshot.data ??
+                      const <PartnerInstitutionRecord>[];
+
+                  final programs = <String>{
+                    'All Programs',
+                    ...students
+                        .map((student) => student.program)
+                        .whereType<String>()
+                        .where((value) => value.trim().isNotEmpty),
+                    ...moas.expand((record) => record.programs),
+                  }.toList()
+                    ..sort();
+                  final years = <String>{
+                    'All Academic Years',
+                    ...students
+                        .map((student) => student.academicYear)
+                        .whereType<String>()
+                        .where((value) => value.trim().isNotEmpty),
+                    ...requirements
+                        .map((record) => record.academicYear)
+                        .whereType<String>()
+                        .where((value) => value.trim().isNotEmpty),
+                  }.toList()
+                    ..sort();
+
+                  final effectiveProgram = programs.contains(_program)
+                      ? _program
+                      : 'All Programs';
+                  final effectiveYear = years.contains(_academicYear)
+                      ? _academicYear
+                      : 'All Academic Years';
+
+                  final filteredStudents = students.where((student) {
+                    final programMatches = effectiveProgram == 'All Programs' ||
+                        student.program == effectiveProgram;
+                    final yearMatches =
+                        effectiveYear == 'All Academic Years' ||
+                            student.academicYear == effectiveYear;
+                    return programMatches && yearMatches;
+                  }).toList();
+                  final studentIds =
+                      filteredStudents.map((student) => student.uid).toSet();
+                  final studentMap = {
+                    for (final student in students) student.uid: student,
+                  };
+                  final profileMap = {
+                    for (final profile in profiles) profile.studentId: profile,
+                  };
+
+                  final data = _buildReportData(
+                    reportType: _reportType,
+                    students: filteredStudents,
+                    studentMap: studentMap,
+                    profileMap: profileMap,
+                    requirements: requirements
+                        .where((record) => studentIds.contains(record.studentId))
+                        .where((record) => _inRange(record.submittedAt))
+                        .toList(),
+                    dtr: dtr
+                        .where((record) => studentIds.contains(record.studentId))
+                        .where((record) => _inRange(record.date))
+                        .toList(),
+                    evaluations: evaluations
+                        .where((record) => studentIds.contains(record.studentId))
+                        .where((record) => _inRange(record.createdAt))
+                        .toList(),
+                    moas: moas
                         .where(
-                          (record) => record.status == ReviewStatus.verified,
+                          (record) => effectiveProgram == 'All Programs' ||
+                              record.programs.isEmpty ||
+                              record.programs.contains(effectiveProgram),
                         )
-                        .length;
-                    final submittedEvaluations = evaluations
-                        .where((record) => record.submitted)
-                        .length;
-                    return ListView(
+                        .where((record) => _inRange(record.startDate))
+                        .toList(),
+                    partners: partners.where((record) {
+                      return effectiveProgram == 'All Programs' ||
+                          record.programs.isEmpty ||
+                          record.programs.contains(effectiveProgram);
+                    }).toList(),
+                  );
+
+                  final statuses = <String>{
+                    'All Statuses',
+                    ...data.rows.map((row) => row.status).where(
+                          (value) => value.trim().isNotEmpty,
+                        ),
+                  }.toList()
+                    ..sort();
+                  final effectiveStatus = statuses.contains(_status)
+                      ? _status
+                      : 'All Statuses';
+                  final visibleRows = data.rows.where((row) {
+                    final statusMatches =
+                        effectiveStatus == 'All Statuses' ||
+                            row.status == effectiveStatus;
+                    final queryMatches = _query.trim().isEmpty ||
+                        row.cells.join(' ').toLowerCase().contains(
+                              _query.trim().toLowerCase(),
+                            );
+                    return statusMatches && queryMatches;
+                  }).toList();
+
+                  return WorkflowPage(
+                    title: 'Reports & Analytics',
+                    subtitle:
+                        'Generate filtered internship reports, review dashboard analytics, and export PDF, Excel, or CSV files.',
+                    eyebrow: 'CAS Monitoring  ›  Reports & Analytics',
+                    actions: [
+                      OutlinedButton.icon(
+                        onPressed: () => _archiveAcademicYear(context),
+                        icon: const Icon(Icons.archive_outlined, size: 17),
+                        label: const Text('Archive Academic Year'),
+                      ),
+                      PopupMenuButton<String>(
+                        enabled: !_exporting && visibleRows.isNotEmpty,
+                        onSelected: (format) => _export(
+                          context,
+                          format,
+                          data.headers,
+                          visibleRows,
+                        ),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
+                          PopupMenuItem(
+                            value: 'excel',
+                            child: Text('Export Excel'),
+                          ),
+                          PopupMenuItem(value: 'csv', child: Text('Export CSV')),
+                        ],
+                        child: Container(
+                          height: 40,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: (!_exporting && visibleRows.isNotEmpty)
+                                ? AppTheme.blue
+                                : AppTheme.surfaceSoft,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: (!_exporting && visibleRows.isNotEmpty)
+                                  ? AppTheme.blue
+                                  : AppTheme.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_exporting)
+                                const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  Icons.download_outlined,
+                                  size: 17,
+                                  color: visibleRows.isNotEmpty
+                                      ? Colors.white
+                                      : AppTheme.muted,
+                                ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Export',
+                                style: TextStyle(
+                                  color: (!_exporting && visibleRows.isNotEmpty)
+                                      ? Colors.white
+                                      : AppTheme.muted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    child: ListView(
                       children: [
-                        _Header(
-                          onCreateEvaluation: () => _createEvaluation(context),
-                          onArchive: () => _archive(context),
+                        _ReportFilters(
+                          reportType: _reportType,
+                          reportTypes: _reportTypes,
+                          program: effectiveProgram,
+                          programs: programs,
+                          academicYear: effectiveYear,
+                          academicYears: years,
+                          status: effectiveStatus,
+                          statuses: statuses,
                           range: _range,
-                          onFilter: () => _pickRange(context),
-                          onClearFilter: _range == null
-                              ? null
-                              : () => setState(() => _range = null),
-                          onExport: rows.isEmpty
-                              ? null
-                              : (format) =>
-                                    _export(context, exporter, rows, format),
+                          onReportType: (value) => setState(() {
+                            _reportType = value;
+                            _status = 'All Statuses';
+                          }),
+                          onProgram: (value) =>
+                              setState(() => _program = value),
+                          onAcademicYear: (value) =>
+                              setState(() => _academicYear = value),
+                          onStatus: (value) => setState(() => _status = value),
+                          onQuery: (value) => setState(() => _query = value),
+                          onDateRange: () => _pickRange(context),
+                          onReset: () => setState(() {
+                            _program = 'All Programs';
+                            _academicYear = 'All Academic Years';
+                            _status = 'All Statuses';
+                            _query = '';
+                            _range = null;
+                          }),
                         ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: [
-                            _Metric(
-                              label: 'Students',
-                              value: '${rows.length}',
-                              icon: Icons.groups_outlined,
-                            ),
-                            _Metric(
-                              label: 'Verified requirements',
-                              value: '$verified/${requirements.length}',
-                              icon: Icons.verified_outlined,
-                            ),
-                            _Metric(
-                              label: 'Rendered hours',
-                              value: dtr
-                                  .fold<double>(
-                                    0,
-                                    (sum, record) => sum + record.renderedHours,
-                                  )
-                                  .toStringAsFixed(1),
-                              icon: Icons.schedule_outlined,
-                            ),
-                            _Metric(
-                              label: 'Evaluations submitted',
-                              value:
-                                  '$submittedEvaluations/${evaluations.length}',
-                              icon: Icons.assignment_turned_in_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _ReportTable(rows: rows),
-                        const SizedBox(height: 16),
-                        _EvaluationList(
-                          evaluations: evaluations,
-                          onCopy: (record) =>
-                              _copyEvaluationLink(context, record.id),
-                        ),
-                        const SizedBox(height: 16),
-                        _ArchiveList(
-                          archives: archives,
-                          repository: repository,
+                        const SizedBox(height: 14),
+                        _ReportMetrics(data: data, visibleCount: visibleRows.length),
+                        const SizedBox(height: 14),
+                        SectionCard(
+                          title: _reportType,
+                          subtitle:
+                              '${visibleRows.length} matching record(s) • Filters are applied before export.',
+                          padding: EdgeInsets.zero,
+                          child: visibleRows.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.all(22),
+                                  child: EmptyWorkflowState(
+                                    icon: Icons.query_stats_outlined,
+                                    title: 'No records found',
+                                    message:
+                                        'Adjust the report type, date range, academic year, program, status, or search criteria.',
+                                  ),
+                                )
+                              : _ReportTable(
+                                  headers: data.headers,
+                                  rows: visibleRows,
+                                ),
                         ),
                       ],
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
+        ),
+      ),
     ),
   );
 
-  bool _includes(DateTime date) {
+  bool _inRange(DateTime date) {
     final range = _range;
     if (range == null) return true;
-    final inclusiveEnd = DateTime(
+    final start = DateTime(range.start.year, range.start.month, range.start.day);
+    final end = DateTime(
       range.end.year,
       range.end.month,
       range.end.day,
@@ -158,229 +337,102 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
       59,
       59,
     );
-    return !date.isBefore(range.start) && !date.isAfter(inclusiveEnd);
+    return !date.isBefore(start) && !date.isAfter(end);
   }
 
   Future<void> _pickRange(BuildContext context) async {
     final now = DateTime.now();
-    final value = await showDateRangePicker(
+    final result = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      initialDateRange:
-          _range ??
-          DateTimeRange(start: DateTime(now.year, now.month, 1), end: now),
+      initialDateRange: _range ??
+          DateTimeRange(
+            start: DateTime(now.year, now.month, 1),
+            end: now,
+          ),
     );
-    if (value != null && mounted) setState(() => _range = value);
+    if (result != null && mounted) setState(() => _range = result);
   }
 
   Future<void> _export(
     BuildContext context,
-    ReportExportService exporter,
-    List<ReportRow> rows,
     String format,
+    List<String> headers,
+    List<_ReportRowData> rows,
   ) async {
+    setState(() => _exporting = true);
     try {
+      final exporter = const ReportExportService();
+      final cells = rows.map((row) => row.cells).toList();
       switch (format) {
         case 'pdf':
-          await exporter.exportPdf(rows);
+          await exporter.exportGenericPdf(
+            title: _reportType,
+            headers: headers,
+            rows: cells,
+          );
           break;
         case 'excel':
-          await exporter.exportExcel(rows);
+          await exporter.exportGenericExcel(
+            title: _reportType,
+            headers: headers,
+            rows: cells,
+          );
           break;
         default:
-          await exporter.exportCsv(rows);
-          break;
+          await exporter.exportGenericCsv(
+            title: _reportType,
+            headers: headers,
+            rows: cells,
+          );
+      }
+      await widget.repository.logReportGeneration(
+        actor: widget.user,
+        format: format,
+        rowCount: rows.length,
+        startDate: _range?.start,
+        endDate: _range?.end,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${format.toUpperCase()} report generated.')),
+        );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to export report: $error')),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
-  Future<void> _createEvaluation(BuildContext context) async {
-    final pageContext = context;
-    final students = (await repository.watchUsers(role: UserRole.student).first)
-        .where((student) => student.active)
-        .toList();
-    if (!context.mounted) return;
-    if (students.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Create an active student first.')),
-      );
-      return;
-    }
-    AppUser selected = students.first;
-    final company = TextEditingController();
-    final supervisor = TextEditingController();
-    final email = TextEditingController();
-    final days = TextEditingController(text: '14');
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create supervisor evaluation link'),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<AppUser>(
-                    initialValue: selected,
-                    decoration: const InputDecoration(labelText: 'Student'),
-                    items: students
-                        .map(
-                          (student) => DropdownMenuItem(
-                            value: student,
-                            child: Text(student.displayName),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setDialogState(() => selected = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: company,
-                    decoration: const InputDecoration(
-                      labelText: 'Company / agency',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: supervisor,
-                    decoration: const InputDecoration(
-                      labelText: 'Supervisor name',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Supervisor email',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: days,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Link validity in days',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  final token = await repository.createSupervisorEvaluation(
-                    actor: user,
-                    student: selected,
-                    companyName: company.text,
-                    supervisorName: supervisor.text,
-                    supervisorEmail: email.text,
-                    validDays: int.tryParse(days.text) ?? 14,
-                  );
-                  if (!dialogContext.mounted) return;
-                  Navigator.pop(dialogContext);
-                  await _showEvaluationLink(pageContext, token);
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              child: const Text('Create link'),
-            ),
-          ],
-        ),
-      ),
-    );
-    company.dispose();
-    supervisor.dispose();
-    email.dispose();
-    days.dispose();
-  }
-
-  Future<void> _showEvaluationLink(BuildContext context, String token) async {
-    final link = _evaluationLink(token);
-    await Clipboard.setData(ClipboardData(text: link));
-    if (!context.mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Evaluation link created'),
-        content: SelectableText(link),
-        actions: [
-          TextButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: link));
-            },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Done'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _copyEvaluationLink(BuildContext context, String token) async {
-    await Clipboard.setData(ClipboardData(text: _evaluationLink(token)));
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Evaluation link copied.')));
-    }
-  }
-
-  String _evaluationLink(String token) =>
-      Uri.base.replace(queryParameters: {'evaluation': token}).toString();
-
-  Future<void> _archive(BuildContext context) async {
+  Future<void> _archiveAcademicYear(BuildContext context) async {
     final now = DateTime.now();
     final activeStartYear = now.month >= 6 ? now.year : now.year - 1;
-    final defaultYear = activeStartYear - 1;
-    final year = TextEditingController(text: '$defaultYear');
+    final controller = TextEditingController(text: '${activeStartYear - 1}');
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Archive academic year'),
+        title: const Text('Archive Completed Academic Year'),
         content: SizedBox(
-          width: 440,
+          width: 430,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'This moves matching June–May requirements, DTR entries, and evaluations out of active dashboards.',
+                'Only completed and verified internship records are archived. Active or incomplete records remain in the active academic year.',
               ),
               const SizedBox(height: 14),
               TextField(
-                controller: year,
+                controller: controller,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Starting year (example: 2025)',
+                  labelText: 'Starting year (example: 2025 for AY 2025-2026)',
                 ),
               ),
             ],
@@ -394,406 +446,490 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
           FilledButton(
             onPressed: () async {
               try {
-                final value = int.tryParse(year.text);
-                if (value == null || value < 2000 || value > 2100) {
-                  throw ArgumentError('Enter a valid starting year.');
+                final year = int.tryParse(controller.text.trim());
+                if (year == null || year < 2000 || year > 2100) {
+                  throw ArgumentError('Enter a valid academic-year starting year.');
                 }
-                await repository.archiveAcademicYear(
-                  actor: user,
-                  startYear: value,
+                await widget.repository.archiveAcademicYear(
+                  actor: widget.user,
+                  startYear: year,
                 );
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
               } catch (error) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('$error')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$error')),
+                  );
                 }
               }
             },
-            child: const Text('Archive records'),
+            child: const Text('Archive Eligible Records'),
           ),
         ],
       ),
     );
-    year.dispose();
+    controller.dispose();
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.onCreateEvaluation,
-    required this.onArchive,
-    required this.onExport,
-    required this.range,
-    required this.onFilter,
-    required this.onClearFilter,
-  });
+_ReportData _buildReportData({
+  required String reportType,
+  required List<AppUser> students,
+  required Map<String, AppUser> studentMap,
+  required Map<String, InternshipProfileRecord> profileMap,
+  required List<RequirementRecord> requirements,
+  required List<DtrRecord> dtr,
+  required List<SupervisorEvaluationRecord> evaluations,
+  required List<MoaRecord> moas,
+  required List<PartnerInstitutionRecord> partners,
+}) {
+  final date = DateFormat.yMMMd();
+  final time = DateFormat.jm();
 
-  final VoidCallback onCreateEvaluation;
-  final VoidCallback onArchive;
-  final ValueChanged<String>? onExport;
-  final DateTimeRange? range;
-  final VoidCallback onFilter;
-  final VoidCallback? onClearFilter;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 12,
-    runSpacing: 12,
-    children: [
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Reports & advanced workflows',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const Text(
-            'Exports, supervisor evaluations, and academic-year archives.',
-          ),
+  switch (reportType) {
+    case 'Student Deployment':
+      return _ReportData(
+        headers: const [
+          'Student',
+          'Student No.',
+          'Program',
+          'Academic Year',
+          'Company / Agency',
+          'Placement',
+          'Internship Stage',
         ],
-      ),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          OutlinedButton.icon(
-            onPressed: onFilter,
-            icon: const Icon(Icons.date_range_outlined),
-            label: Text(
-              range == null
-                  ? 'Date filter'
-                  : '${DateFormat.yMMMd().format(range!.start)} – ${DateFormat.yMMMd().format(range!.end)}',
-            ),
-          ),
-          if (onClearFilter != null)
-            IconButton(
-              tooltip: 'Clear date filter',
-              onPressed: onClearFilter,
-              icon: const Icon(Icons.filter_alt_off_outlined),
-            ),
-          FilledButton.icon(
-            onPressed: onCreateEvaluation,
-            icon: const Icon(Icons.add_link),
-            label: const Text('Evaluation link'),
-          ),
-          OutlinedButton.icon(
-            onPressed: onArchive,
-            icon: const Icon(Icons.archive_outlined),
-            label: const Text('Archive year'),
-          ),
-          PopupMenuButton<String>(
-            enabled: onExport != null,
-            onSelected: onExport,
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
-              PopupMenuItem(value: 'excel', child: Text('Export Excel')),
-              PopupMenuItem(value: 'csv', child: Text('Export CSV')),
+        rows: students.map((student) {
+          final profile = profileMap[student.uid];
+          final stage = profile?.stage.label ??
+              InternshipStage.pendingRequirements.label;
+          return _ReportRowData(
+            status: stage,
+            cells: [
+              student.displayName,
+              student.studentNumber ?? '—',
+              student.program ?? '—',
+              student.academicYear ?? '—',
+              profile?.companyName.isNotEmpty == true
+                  ? profile!.companyName
+                  : 'Unassigned',
+              profile?.placementStatus ?? 'Unassigned',
+              stage,
             ],
-            child: const Chip(
-              avatar: Icon(Icons.download_outlined),
-              label: Text('Export'),
-            ),
-          ),
+          );
+        }).toList(),
+      );
+
+    case 'Document Verification':
+      return _ReportData(
+        headers: const [
+          'Student',
+          'Document',
+          'Category',
+          'Program',
+          'Submitted',
+          'Status',
         ],
-      ),
-    ],
-  );
-}
-
-class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value, required this.icon});
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 245,
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            CircleAvatar(child: Icon(icon)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  Text(label, maxLines: 2),
+        rows: requirements
+            .map(
+              (record) => _ReportRowData(
+                status: record.status.label,
+                cells: [
+                  record.studentName,
+                  record.title,
+                  record.category,
+                  record.program ?? studentMap[record.studentId]?.program ?? '—',
+                  date.format(record.submittedAt),
+                  record.status.label,
                 ],
               ),
-            ),
-          ],
+            )
+            .toList(),
+      );
+
+    case 'DTR & Hours':
+      return _ReportData(
+        headers: const [
+          'Student',
+          'Date',
+          'Time In',
+          'Time Out',
+          'Break',
+          'Rendered Hours',
+          'Status',
+        ],
+        rows: dtr
+            .map(
+              (record) => _ReportRowData(
+                status: record.status.label,
+                cells: [
+                  record.studentName,
+                  date.format(record.date),
+                  time.format(record.timeIn),
+                  time.format(record.timeOut),
+                  '${record.breakMinutes} min',
+                  record.renderedHours.toStringAsFixed(2),
+                  record.status.label,
+                ],
+              ),
+            )
+            .toList(),
+      );
+
+    case 'Supervisor Evaluations':
+      return _ReportData(
+        headers: const [
+          'Student',
+          'Company / Agency',
+          'Supervisor',
+          'Status',
+          'Rating',
+          'Submitted',
+        ],
+        rows: evaluations
+            .map(
+              (record) => _ReportRowData(
+                status: record.expired ? 'Expired' : record.status,
+                cells: [
+                  record.studentName,
+                  record.companyName,
+                  record.supervisorName,
+                  record.expired ? 'Expired' : record.status,
+                  record.submitted
+                      ? record.averageRating.toStringAsFixed(2)
+                      : '—',
+                  record.submittedAt == null
+                      ? '—'
+                      : date.add_jm().format(record.submittedAt!),
+                ],
+              ),
+            )
+            .toList(),
+      );
+
+    case 'Partner & MOA':
+      final partnerNames = {for (final partner in partners) partner.id: partner.name};
+      return _ReportData(
+        headers: const [
+          'Institution',
+          'Reference No.',
+          'Programs',
+          'Date Signed',
+          'Expiration',
+          'Status',
+        ],
+        rows: moas
+            .map(
+              (record) => _ReportRowData(
+                status: record.status,
+                cells: [
+                  partnerNames[record.partnerId] ?? record.partnerName,
+                  record.moaNumber,
+                  record.programs.isEmpty
+                      ? 'All Programs'
+                      : record.programs.join(', '),
+                  date.format(record.startDate),
+                  date.format(record.endDate),
+                  record.status,
+                ],
+              ),
+            )
+            .toList(),
+      );
+
+    default:
+      return _ReportData(
+        headers: const [
+          'Student',
+          'Program',
+          'Academic Year',
+          'Verified Requirements',
+          'Approved Hours',
+          'Supervisor Rating',
+          'Internship Stage',
+        ],
+        rows: students.map((student) {
+          final studentRequirements = requirements
+              .where((record) => record.studentId == student.uid)
+              .toList();
+          final verified = studentRequirements
+              .where((record) => record.status == ReviewStatus.verified)
+              .length;
+          final approvedHours = dtr
+              .where(
+                (record) =>
+                    record.studentId == student.uid &&
+                    record.status == ReviewStatus.verified,
+              )
+              .fold<double>(0, (sum, record) => sum + record.renderedHours);
+          final submittedEvaluations = evaluations
+              .where(
+                (record) => record.studentId == student.uid && record.submitted,
+              )
+              .toList();
+          final rating = submittedEvaluations.isEmpty
+              ? '—'
+              : submittedEvaluations.last.averageRating.toStringAsFixed(2);
+          final stage = profileMap[student.uid]?.stage.label ??
+              InternshipStage.pendingRequirements.label;
+          return _ReportRowData(
+            status: stage,
+            cells: [
+              student.displayName,
+              student.program ?? '—',
+              student.academicYear ?? '—',
+              '$verified/${studentRequirements.length}',
+              approvedHours.toStringAsFixed(2),
+              rating,
+              stage,
+            ],
+          );
+        }).toList(),
+      );
+  }
+}
+
+class _ReportData {
+  const _ReportData({required this.headers, required this.rows});
+
+  final List<String> headers;
+  final List<_ReportRowData> rows;
+}
+
+class _ReportRowData {
+  const _ReportRowData({required this.status, required this.cells});
+
+  final String status;
+  final List<String> cells;
+}
+
+class _ReportFilters extends StatelessWidget {
+  const _ReportFilters({
+    required this.reportType,
+    required this.reportTypes,
+    required this.program,
+    required this.programs,
+    required this.academicYear,
+    required this.academicYears,
+    required this.status,
+    required this.statuses,
+    required this.range,
+    required this.onReportType,
+    required this.onProgram,
+    required this.onAcademicYear,
+    required this.onStatus,
+    required this.onQuery,
+    required this.onDateRange,
+    required this.onReset,
+  });
+
+  final String reportType;
+  final List<String> reportTypes;
+  final String program;
+  final List<String> programs;
+  final String academicYear;
+  final List<String> academicYears;
+  final String status;
+  final List<String> statuses;
+  final DateTimeRange? range;
+  final ValueChanged<String> onReportType;
+  final ValueChanged<String> onProgram;
+  final ValueChanged<String> onAcademicYear;
+  final ValueChanged<String> onStatus;
+  final ValueChanged<String> onQuery;
+  final VoidCallback onDateRange;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 220,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: reportType,
+                  decoration: const InputDecoration(labelText: 'Report Type'),
+                  items: reportTypes
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onReportType(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: academicYear,
+                  decoration: const InputDecoration(labelText: 'Academic Year'),
+                  items: academicYears
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onAcademicYear(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: program,
+                  decoration: const InputDecoration(labelText: 'Program'),
+                  items: programs
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onProgram(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: status,
+                  decoration: const InputDecoration(labelText: 'Status'),
+                  items: statuses
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onStatus(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 260,
+                child: TextField(
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search_rounded, size: 18),
+                    hintText: 'Search report records…',
+                  ),
+                  onChanged: onQuery,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onDateRange,
+                icon: const Icon(Icons.date_range_outlined, size: 17),
+                label: Text(
+                  range == null
+                      ? 'Any Date'
+                      : '${DateFormat.MMMd().format(range!.start)} – ${DateFormat.MMMd().format(range!.end)}',
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onReset,
+                icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                label: const Text('Reset'),
+              ),
+            ],
+          ),
         ),
-      ),
-    ),
-  );
+      );
+}
+
+class _ReportMetrics extends StatelessWidget {
+  const _ReportMetrics({required this.data, required this.visibleCount});
+
+  final _ReportData data;
+  final int visibleCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final distinctStatuses = data.rows.map((row) => row.status).toSet().length;
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        StatCard(
+          label: 'Matching Records',
+          value: '$visibleCount',
+          icon: Icons.table_rows_outlined,
+          color: AppTheme.blue,
+        ),
+        StatCard(
+          label: 'Available Records',
+          value: '${data.rows.length}',
+          icon: Icons.dataset_outlined,
+          color: AppTheme.purple,
+        ),
+        StatCard(
+          label: 'Status Groups',
+          value: '$distinctStatuses',
+          icon: Icons.donut_small_outlined,
+          color: AppTheme.success,
+        ),
+      ],
+    );
+  }
 }
 
 class _ReportTable extends StatelessWidget {
-  const _ReportTable({required this.rows});
+  const _ReportTable({required this.headers, required this.rows});
 
-  final List<ReportRow> rows;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Student report', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          if (rows.isEmpty)
-            const Text('No active report data is available.')
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Student')),
-                  DataColumn(label: Text('Requirements')),
-                  DataColumn(label: Text('Verified')),
-                  DataColumn(label: Text('Hours')),
-                  DataColumn(label: Text('Supervisor rating')),
-                ],
-                rows: rows
-                    .map(
-                      (row) => DataRow(
-                        cells: [
-                          DataCell(Text(row.studentName)),
-                          DataCell(Text('${row.requirements}')),
-                          DataCell(Text('${row.verified}')),
-                          DataCell(Text(row.renderedHours.toStringAsFixed(2))),
-                          DataCell(
-                            Text(
-                              row.evaluationAverage?.toStringAsFixed(2) ?? '—',
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _EvaluationList extends StatelessWidget {
-  const _EvaluationList({required this.evaluations, required this.onCopy});
-
-  final List<SupervisorEvaluationRecord> evaluations;
-  final ValueChanged<SupervisorEvaluationRecord> onCopy;
+  final List<String> headers;
+  final List<_ReportRowData> rows;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Supervisor evaluations',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 10),
-          if (evaluations.isEmpty)
-            const Text('No evaluation links have been created.')
-          else
-            ...evaluations
-                .take(10)
-                .map(
-                  (record) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      record.submitted
-                          ? Icons.task_alt
-                          : record.expired
-                          ? Icons.timer_off_outlined
-                          : Icons.pending_actions_outlined,
-                    ),
-                    title: Text(record.studentName),
-                    subtitle: Text(
-                      '${record.companyName} • ${record.supervisorName}\n'
-                      '${record.submitted
-                          ? 'Submitted • ${record.averageRating.toStringAsFixed(2)}/5'
-                          : record.expired
-                          ? 'Expired'
-                          : 'Pending'}',
-                    ),
-                    isThreeLine: true,
-                    trailing: record.submitted
-                        ? null
-                        : IconButton(
-                            tooltip: 'Copy evaluation link',
-                            onPressed: () => onCopy(record),
-                            icon: const Icon(Icons.copy),
-                          ),
+  Widget build(BuildContext context) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: headers
+              .map(
+                (header) => DataColumn(
+                  label: Text(
+                    header,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _ArchiveList extends StatelessWidget {
-  const _ArchiveList({required this.archives, required this.repository});
-
-  final List<AcademicArchiveRecord> archives;
-  final PracticumRepository repository;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Academic archives',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 10),
-          if (archives.isEmpty)
-            const Text('No academic years have been archived.')
-          else
-            ...archives.map(
-              (archive) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: Text('AY ${archive.academicYear}'),
-                subtitle: Text(
-                  '${archive.requirementCount} requirements • '
-                  '${archive.dtrCount} DTR entries • '
-                  '${archive.evaluationCount} evaluations\n'
-                  '${DateFormat.yMMMd().format(archive.createdAt)}',
+              )
+              .toList(),
+          rows: rows
+              .map(
+                (row) => DataRow(
+                  cells: row.cells
+                      .map(
+                        (cell) => DataCell(
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 240),
+                            child: Text(
+                              cell,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
                 ),
-                isThreeLine: true,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _showArchive(context, archive),
-              ),
-            ),
-        ],
-      ),
-    ),
-  );
-
-  Future<void> _showArchive(
-    BuildContext context,
-    AcademicArchiveRecord archive,
-  ) async {
-    final future = repository.loadAcademicArchive(archive.academicYear);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('AY ${archive.academicYear} records'),
-        content: SizedBox(
-          width: 720,
-          height: 480,
-          child: FutureBuilder<AcademicArchiveContents>(
-            future: future,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(child: Text('${snapshot.error}'));
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final contents = snapshot.data!;
-              return ListView(
-                children: [
-                  _ArchiveSection(
-                    title: 'Requirements',
-                    children: contents.requirements
-                        .map(
-                          (record) => ListTile(
-                            leading: const Icon(Icons.description_outlined),
-                            title: Text(record.title),
-                            subtitle: Text(
-                              '${record.studentName} • ${record.status.label}',
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  _ArchiveSection(
-                    title: 'Daily time records',
-                    children: contents.dtr
-                        .map(
-                          (record) => ListTile(
-                            leading: const Icon(Icons.schedule_outlined),
-                            title: Text(record.studentName),
-                            subtitle: Text(
-                              '${DateFormat.yMMMd().format(record.date)} • '
-                              '${record.renderedHours.toStringAsFixed(2)} hours',
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  _ArchiveSection(
-                    title: 'Supervisor evaluations',
-                    children: contents.evaluations
-                        .map(
-                          (record) => ListTile(
-                            leading: const Icon(
-                              Icons.assignment_turned_in_outlined,
-                            ),
-                            title: Text(record.studentName),
-                            subtitle: Text(
-                              '${record.companyName} • ${record.status}',
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-              );
-            },
-          ),
+              )
+              .toList(),
         ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ArchiveSection extends StatelessWidget {
-  const _ArchiveSection({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => ExpansionTile(
-    initiallyExpanded: true,
-    title: Text('$title (${children.length})'),
-    children: children.isEmpty
-        ? const [ListTile(title: Text('No records'))]
-        : children,
-  );
+      );
 }

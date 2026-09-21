@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -28,167 +30,249 @@ class _CoordinatorDashboardScreenState
     extends State<CoordinatorDashboardScreen> {
   AppUser? _selectedStudent;
   String _program = 'All Programs';
+  String _academicYear = 'All Academic Years';
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppUser>>(
-    stream: widget.repository.watchUsers(role: UserRole.student),
+    stream: widget.repository.watchStudentsFor(widget.user),
     builder: (context, userSnapshot) {
       final allStudents = userSnapshot.data ?? const <AppUser>[];
       final programs = {
         'All Programs',
         ...allStudents.map((student) => student.program).whereType<String>(),
       }.toList();
-      final students = _program == 'All Programs'
-          ? allStudents
-          : allStudents
-                .where((student) => student.program == _program)
-                .toList();
+      final academicYears = {
+        'All Academic Years',
+        ...allStudents
+            .map((student) => student.academicYear)
+            .whereType<String>()
+            .where((value) => value.trim().isNotEmpty),
+      }.toList()..sort();
+      final effectiveProgram =
+          programs.contains(_program) ? _program : 'All Programs';
+      final effectiveAcademicYear = academicYears.contains(_academicYear)
+          ? _academicYear
+          : 'All Academic Years';
+      final students = allStudents.where((student) {
+        final programMatches =
+            effectiveProgram == 'All Programs' ||
+            student.program == effectiveProgram;
+        final yearMatches =
+            effectiveAcademicYear == 'All Academic Years' ||
+            student.academicYear == effectiveAcademicYear;
+        return programMatches && yearMatches;
+      }).toList();
+
       return StreamBuilder<List<RequirementRecord>>(
         stream: widget.repository.watchRequirements(widget.user),
         builder: (context, requirementSnapshot) {
-          final requirements =
+          final allRequirements =
               requirementSnapshot.data ?? const <RequirementRecord>[];
+          final selectedStudentIds = students.map((student) => student.uid).toSet();
+          final requirements = allRequirements
+              .where((record) => selectedStudentIds.contains(record.studentId))
+              .toList();
           return StreamBuilder<List<MoaRecord>>(
-            stream: widget.repository.watchMoas(),
+            stream: widget.user.role == UserRole.admin
+                ? widget.repository.watchMoas()
+                : Stream<List<MoaRecord>>.value(const <MoaRecord>[]),
             builder: (context, moaSnapshot) {
               final moas = moaSnapshot.data ?? const <MoaRecord>[];
               return StreamBuilder<List<InternshipProfileRecord>>(
-                stream: widget.repository.watchInternshipProfiles(),
+                stream: widget.repository.watchInternshipProfilesFor(widget.user),
                 builder: (context, profileSnapshot) {
-                  final profiles =
-                      profileSnapshot.data ?? const <InternshipProfileRecord>[];
-                  return WorkflowPage(
-                    title: 'Coordinator Dashboard',
-                    subtitle:
-                        'Monitor internship activity, documents, and partnerships.',
-                    actions: [
-                      SizedBox(
-                        width: 190,
-                        child: DropdownButtonFormField<String>(
-                          initialValue: programs.contains(_program)
-                              ? _program
-                              : 'All Programs',
-                          decoration: const InputDecoration(
-                            labelText: 'Program',
-                            isDense: true,
-                          ),
-                          items: programs
-                              .map(
-                                (value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(value),
-                                ),
+                  final allProfiles = profileSnapshot.data ??
+                      const <InternshipProfileRecord>[];
+                  final profiles = allProfiles
+                      .where((profile) => selectedStudentIds.contains(profile.studentId))
+                      .toList();
+                  return StreamBuilder<List<DtrRecord>>(
+                    stream: widget.repository.watchDtr(widget.user),
+                    builder: (context, dtrSnapshot) {
+                      final allDtr = dtrSnapshot.data ?? const <DtrRecord>[];
+                      final dtr = allDtr
+                          .where((record) => selectedStudentIds.contains(record.studentId))
+                          .toList();
+                      final selected = _selectedStudent != null &&
+                              selectedStudentIds.contains(_selectedStudent!.uid)
+                          ? _selectedStudent
+                          : (students.isEmpty ? null : students.first);
+                      final selectedProfile = selected == null
+                          ? null
+                          : profiles
+                              .where(
+                                (profile) =>
+                                    profile.studentId == selected.uid,
                               )
-                              .toList(),
-                          onChanged: (value) => setState(
-                            () => _program = value ?? 'All Programs',
-                          ),
-                        ),
-                      ),
-                    ],
-                    child: ListView(
-                      children: [
-                        _DashboardStats(
-                          students: students,
-                          requirements: requirements,
-                          profiles: profiles,
-                          moas: moas,
-                        ),
-                        const SizedBox(height: 14),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final wide = constraints.maxWidth >= 1050;
-                            final left = Column(
-                              children: [
-                                _RecentSubmissions(
-                                  requirements: requirements,
-                                  onSelect: (record) {
-                                    final match = allStudents.where(
-                                      (student) =>
-                                          student.uid == record.studentId,
-                                    );
-                                    if (match.isNotEmpty)
-                                      setState(
-                                        () => _selectedStudent = match.first,
-                                      );
-                                  },
-                                ),
-                                const SizedBox(height: 14),
-                                _PartnerStatus(moas: moas),
-                              ],
-                            );
-                            final middle = Column(
-                              children: [
-                                _NeedsAttention(requirements: requirements),
-                                const SizedBox(height: 14),
-                                _DashboardActivity(
-                                  repository: widget.repository,
-                                ),
-                                const SizedBox(height: 14),
-                                _InternshipDistribution(profiles: profiles),
-                              ],
-                            );
-                            final selected =
-                                _selectedStudent ??
-                                (students.isEmpty ? null : students.first);
-                            final right = _StudentSummary(
-                              student: selected,
-                              requirements: requirements,
-                              profile: selected == null
-                                  ? null
-                                  : profiles
-                                        .where(
-                                          (profile) =>
-                                              profile.studentId == selected.uid,
-                                        )
-                                        .firstOrNull,
-                              onOpen: selected == null
-                                  ? null
-                                  : () => Navigator.of(context).push(
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => Scaffold(
-                                          appBar: AppBar(
-                                            title: const Text(
-                                              'Student Profile',
-                                            ),
-                                          ),
-                                          body: Padding(
-                                            padding: const EdgeInsets.all(20),
-                                            child:
-                                                StudentInternshipProfileScreen(
-                                                  actor: widget.user,
-                                                  student: selected,
-                                                  repository: widget.repository,
-                                                ),
-                                          ),
-                                        ),
+                              .firstOrNull;
+
+                      return WorkflowPage(
+                        title: widget.user.role == UserRole.admin
+                            ? 'CAS Dashboard'
+                            : 'Program Coordinator Dashboard',
+                        subtitle: widget.user.role == UserRole.admin
+                            ? 'Monitor CAS internship records, documents, partnerships, status, and college-wide activity.'
+                            : 'Monitor assigned interns, review requirements, and track internship progress.',
+                        eyebrow: 'Home  ›  Dashboard',
+                        actions: [
+                          SizedBox(
+                            width: 178,
+                            child: DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: effectiveAcademicYear,
+                              decoration: const InputDecoration(
+                                labelText: 'Academic Year',
+                              ),
+                              items: academicYears
+                                  .map(
+                                    (value) => DropdownMenuItem(
+                                      value: value,
+                                      child: Text(
+                                        value,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                            );
-                            if (!wide)
-                              return Column(
-                                children: [
-                                  left,
-                                  const SizedBox(height: 14),
-                                  middle,
-                                  const SizedBox(height: 14),
-                                  right,
-                                ],
-                              );
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(flex: 5, child: left),
-                                const SizedBox(width: 14),
-                                Expanded(flex: 4, child: middle),
-                                const SizedBox(width: 14),
-                                Expanded(flex: 3, child: right),
-                              ],
-                            );
-                          },
+                                  )
+                                  .toList(),
+                              onChanged: (value) => setState(
+                                () => _academicYear = value ?? 'All Academic Years',
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 190,
+                            child: DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: effectiveProgram,
+                              decoration: const InputDecoration(
+                                labelText: 'CAS Program',
+                              ),
+                              items: programs
+                                  .map(
+                                    (value) => DropdownMenuItem(
+                                      value: value,
+                                      child: Text(
+                                        value,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) => setState(
+                                () => _program = value ?? 'All Programs',
+                              ),
+                            ),
+                          ),
+                        ],
+                        child: ListView(
+                          children: [
+                            _DashboardStats(
+                              students: students,
+                              requirements: requirements,
+                              profiles: profiles,
+                              moas: moas,
+                              showMoa: widget.user.role == UserRole.admin,
+                            ),
+                            const SizedBox(height: 10),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final left = Column(
+                                  children: [
+                                    _RecentSubmissions(
+                                      requirements: requirements,
+                                      onSelect: (record) {
+                                        final match = allStudents.where(
+                                          (student) =>
+                                              student.uid == record.studentId,
+                                        );
+                                        if (match.isNotEmpty) {
+                                          setState(
+                                            () => _selectedStudent = match.first,
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    if (widget.user.role == UserRole.admin) ...[
+                                      const SizedBox(height: 10),
+                                      _PartnerStatus(moas: moas),
+                                    ],
+                                  ],
+                                );
+                                final middle = Column(
+                                  children: [
+                                    _NeedsAttention(
+                                      requirements: requirements,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    _DashboardActivity(
+                                      repository: widget.repository,
+                                      actor: widget.user,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    _InternshipDistribution(
+                                      profiles: profiles,
+                                    ),
+                                  ],
+                                );
+                                final right = _StudentSummary(
+                                  student: selected,
+                                  requirements: requirements,
+                                  profile: selectedProfile,
+                                  dtr: dtr,
+                                  onOpen: selected == null
+                                      ? null
+                                      : () => Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => Scaffold(
+                                              appBar: AppBar(
+                                                title: const Text(
+                                                  'Student Internship Profile',
+                                                ),
+                                              ),
+                                              body: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(18),
+                                                child:
+                                                    StudentInternshipProfileScreen(
+                                                  actor: widget.user,
+                                                  student: selected,
+                                                  repository:
+                                                      widget.repository,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                );
+                                if (constraints.maxWidth < 1120) {
+                                  return Column(
+                                    children: [
+                                      left,
+                                      const SizedBox(height: 10),
+                                      middle,
+                                      const SizedBox(height: 10),
+                                      right,
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(flex: 5, child: left),
+                                    const SizedBox(width: 10),
+                                    Expanded(flex: 4, child: middle),
+                                    const SizedBox(width: 10),
+                                    SizedBox(width: 260, child: right),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   );
                 },
               );
@@ -206,11 +290,14 @@ class _DashboardStats extends StatelessWidget {
     required this.requirements,
     required this.profiles,
     required this.moas,
+    required this.showMoa,
   });
+
   final List<AppUser> students;
   final List<RequirementRecord> requirements;
   final List<InternshipProfileRecord> profiles;
   final List<MoaRecord> moas;
+  final bool showMoa;
 
   @override
   Widget build(BuildContext context) {
@@ -222,56 +309,66 @@ class _DashboardStats extends StatelessWidget {
         )
         .length;
     final ongoing = profiles
-        .where((item) => item.status == 'Ongoing Internship')
+        .where((item) => item.status.toLowerCase().contains('ongoing'))
         .length;
     final completed = profiles
-        .where((item) => item.status == 'Completed')
+        .where((item) => item.status.toLowerCase().contains('complete'))
         .length;
     final expiring = moas
         .where((item) => item.status == 'Nearing expiration')
         .length;
     final cards = [
       StatCard(
-        label: 'Total interns',
+        label: 'Total Interns',
         value: '${students.length}',
+        caption: 'CAS students',
         icon: Icons.groups_outlined,
         color: AppTheme.blue,
       ),
       StatCard(
-        label: 'For verification',
+        label: 'For Verification',
         value: '$forVerification',
+        caption: 'submissions',
         icon: Icons.pending_actions_outlined,
-        color: const Color(0xFF6C63FF),
+        color: AppTheme.purple,
       ),
       StatCard(
-        label: 'Ongoing internship',
+        label: 'Ongoing Internship',
         value: '$ongoing',
+        caption: 'active interns',
         icon: Icons.timelapse_outlined,
         color: const Color(0xFF2584D8),
       ),
       StatCard(
         label: 'Completed',
         value: '$completed',
+        caption: 'this school year',
         icon: Icons.verified_outlined,
-        color: const Color(0xFF159A61),
+        color: AppTheme.success,
       ),
-      StatCard(
-        label: 'MOA expiring soon',
-        value: '$expiring',
-        icon: Icons.warning_amber_outlined,
-        color: const Color(0xFFE4931A),
-      ),
+      if (showMoa)
+        StatCard(
+          label: 'MOA Expiring Soon',
+          value: '$expiring',
+          caption: 'within 90 days',
+          icon: Icons.warning_amber_outlined,
+          color: AppTheme.warning,
+        ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth >= 1100
-            ? (constraints.maxWidth - 56) / 5
-            : constraints.maxWidth >= 650
-            ? (constraints.maxWidth - 14) / 2
-            : constraints.maxWidth;
+        final columns = constraints.maxWidth >= 1120
+            ? 5
+            : constraints.maxWidth >= 780
+            ? 3
+            : constraints.maxWidth >= 520
+            ? 2
+            : 1;
+        final width =
+            (constraints.maxWidth - ((columns - 1) * 12)) / columns;
         return Wrap(
-          spacing: 14,
-          runSpacing: 14,
+          spacing: 12,
+          runSpacing: 12,
           children: cards
               .map((card) => SizedBox(width: width, child: card))
               .toList(),
@@ -286,36 +383,116 @@ class _RecentSubmissions extends StatelessWidget {
     required this.requirements,
     required this.onSelect,
   });
+
   final List<RequirementRecord> requirements;
   final ValueChanged<RequirementRecord> onSelect;
 
   @override
-  Widget build(BuildContext context) => SectionCard(
-    title: 'Recent Student Submissions',
-    child: requirements.isEmpty
-        ? const Text('No submissions yet.')
-        : Column(
-            children: requirements
-                .take(8)
-                .map(
-                  (record) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.description_outlined),
-                    title: Text(
-                      record.studentName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      '${record.title} • ${DateFormat.MMMd().format(record.submittedAt)}',
-                    ),
-                    trailing: StatusBadge(record.status.label),
-                    onTap: () => onSelect(record),
+  Widget build(BuildContext context) {
+    final records = requirements.take(8).toList();
+    return SectionCard(
+      title: 'Recent Student Submissions',
+      trailing: TextButton(onPressed: () {}, child: const Text('View All')),
+      padding: EdgeInsets.zero,
+      child: records.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('No submissions yet.'),
+            )
+          : Column(
+              children: [
+                Container(
+                  height: 31,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  color: const Color(0xFFF8FAFC),
+                  child: const Row(
+                    children: [
+                      Expanded(flex: 3, child: Text('Student', style: _head)),
+                      Expanded(flex: 3, child: Text('Requirement', style: _head)),
+                      Expanded(flex: 2, child: Text('Submitted', style: _head)),
+                      Expanded(flex: 2, child: Text('Status', style: _head)),
+                      SizedBox(width: 44, child: Text('Action', style: _head)),
+                    ],
                   ),
-                )
-                .toList(),
-          ),
+                ),
+                ...records.map(
+                  (record) => InkWell(
+                    onTap: () => onSelect(record),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: AppTheme.border),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              record.studentName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 3,
+                            child: _cell(record.title),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: _cell(
+                              DateFormat.MMMd().format(record.submittedAt),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: StatusBadge(
+                                record.status.label,
+                                compact: true,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 44,
+                            child: TextButton(
+                              onPressed: () => onSelect(record),
+                              child: const Text(
+                                'View',
+                                style: TextStyle(fontSize: 8.5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  static const TextStyle _head = TextStyle(
+    fontSize: 8.4,
+    color: AppTheme.muted,
+    fontWeight: FontWeight.w700,
+  );
+
+  Widget _cell(String value) => Text(
+    value,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(fontSize: 9),
   );
 }
 
@@ -332,23 +509,69 @@ class _NeedsAttention extends StatelessWidget {
               record.status == ReviewStatus.rejected ||
               (record.dueDate?.isBefore(DateTime.now()) ?? false),
         )
-        .take(7)
+        .take(6)
         .toList();
     return SectionCard(
       title: 'Requirements Needing Attention',
+      trailing: TextButton(onPressed: () {}, child: const Text('View All')),
       child: records.isEmpty
-          ? const Text('No urgent requirements.')
+          ? const Text(
+              'No urgent requirements.',
+              style: TextStyle(fontSize: 10, color: AppTheme.muted),
+            )
           : Column(
               children: records
                   .map(
-                    (record) => ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(record.studentName),
-                      subtitle: Text(record.title),
-                      trailing: Text(
-                        shortDate(record.dueDate),
-                        style: const TextStyle(color: Colors.red),
+                    (record) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor:
+                                AppTheme.blue.withValues(alpha: .08),
+                            child: Text(
+                              record.studentName.isEmpty
+                                  ? '?'
+                                  : record.studentName[0],
+                              style: const TextStyle(fontSize: 8),
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  record.studentName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  record.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 8.5,
+                                    color: AppTheme.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            shortDate(record.dueDate),
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              color: AppTheme.danger,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   )
@@ -365,25 +588,167 @@ class _PartnerStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SectionCard(
     title: 'Partner Institutions & MOA Status',
+    trailing: TextButton(onPressed: () {}, child: const Text('View All')),
+    padding: EdgeInsets.zero,
     child: moas.isEmpty
-        ? const Text('No MOA records.')
+        ? const Padding(
+            padding: EdgeInsets.all(14),
+            child: Text('No MOA records.'),
+          )
         : Column(
-            children: moas
-                .take(6)
-                .map(
-                  (record) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.business_outlined),
-                    title: Text(record.partnerName),
-                    subtitle: Text(
-                      '${record.moaNumber} • Valid until ${shortDate(record.endDate)}',
-                    ),
-                    trailing: StatusBadge(record.status),
+            children: [
+              Container(
+                height: 31,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                color: const Color(0xFFF8FAFC),
+                child: const Row(
+                  children: [
+                    Expanded(flex: 3, child: Text('Institution', style: _head)),
+                    Expanded(flex: 2, child: Text('MOA Status', style: _head)),
+                    Expanded(flex: 2, child: Text('Expiring', style: _head)),
+                    Expanded(flex: 2, child: Text('Valid Until', style: _head)),
+                  ],
+                ),
+              ),
+              ...moas.take(6).map(
+                (record) => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
                   ),
-                )
-                .toList(),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: AppTheme.border),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          record.partnerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9.2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: StatusBadge(record.status, compact: true),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          record.daysUntilExpiry < 0
+                              ? 'Expired'
+                              : '${record.daysUntilExpiry} days',
+                          style: const TextStyle(
+                            fontSize: 8.8,
+                            color: AppTheme.muted,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          shortDate(record.endDate),
+                          style: const TextStyle(fontSize: 8.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+  );
+
+  static const TextStyle _head = TextStyle(
+    fontSize: 8.4,
+    color: AppTheme.muted,
+    fontWeight: FontWeight.w700,
+  );
+}
+
+class _DashboardActivity extends StatelessWidget {
+  const _DashboardActivity({required this.repository, required this.actor});
+  final PracticumRepository repository;
+  final AppUser actor;
+
+  @override
+  Widget build(BuildContext context) => SectionCard(
+    title: 'Recent Activity',
+    trailing: TextButton(onPressed: () {}, child: const Text('View All')),
+    child: StreamBuilder<List<ActivityLogRecord>>(
+      stream: repository.watchActivityLogs(actor: actor),
+      builder: (context, snapshot) {
+        final records =
+            (snapshot.data ?? const <ActivityLogRecord>[]).take(5).toList();
+        if (records.isEmpty) {
+          return const Text(
+            'No recent activity.',
+            style: TextStyle(fontSize: 10, color: AppTheme.muted),
+          );
+        }
+        return Column(
+          children: records
+              .map(
+                (record) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 25,
+                        height: 25,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F4F7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.history,
+                          size: 13,
+                          color: AppTheme.muted,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              record.action,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.2,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '${record.userName} • ${DateFormat.MMMd().format(record.createdAt)}',
+                              style: const TextStyle(
+                                fontSize: 8.2,
+                                color: AppTheme.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+        );
+      },
+    ),
   );
 }
 
@@ -397,81 +762,132 @@ class _InternshipDistribution extends StatelessWidget {
     for (final profile in profiles) {
       counts[profile.status] = (counts[profile.status] ?? 0) + 1;
     }
+    final entries = counts.entries.toList();
+    final colors = [
+      AppTheme.blue,
+      AppTheme.success,
+      AppTheme.warning,
+      AppTheme.purple,
+      AppTheme.muted,
+    ];
     return SectionCard(
       title: 'Internship Status Overview',
-      child: counts.isEmpty
-          ? const Text('No internship profiles configured.')
-          : Column(
-              children: counts.entries.map((entry) {
-                final value = profiles.isEmpty
-                    ? 0.0
-                    : entry.value / profiles.length;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+      child: profiles.isEmpty
+          ? const Text(
+              'No internship profiles configured.',
+              style: TextStyle(fontSize: 10, color: AppTheme.muted),
+            )
+          : Row(
+              children: [
+                SizedBox(
+                  width: 105,
+                  height: 105,
+                  child: CustomPaint(
+                    painter: _DonutPainter(
+                      values: entries.map((entry) => entry.value).toList(),
+                      colors: List.generate(
+                        entries.length,
+                        (index) => colors[index % colors.length],
+                      ),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(child: Text(entry.key)),
-                          Text('${entry.value}'),
+                          Text(
+                            '${profiles.length}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const Text(
+                            'Total Interns',
+                            style: TextStyle(
+                              fontSize: 8.2,
+                              color: AppTheme.muted,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 5),
-                      LinearProgressIndicator(
-                        value: value,
-                        minHeight: 7,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ],
+                    ),
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    children: List.generate(entries.length, (index) {
+                      final entry = entries[index];
+                      final percent = profiles.isEmpty
+                          ? 0
+                          : ((entry.value / profiles.length) * 100).round();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: colors[index % colors.length],
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                entry.key,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 8.8),
+                              ),
+                            ),
+                            Text(
+                              '${entry.value} ($percent%)',
+                              style: const TextStyle(
+                                fontSize: 8.4,
+                                color: AppTheme.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ],
             ),
     );
   }
 }
 
-class _DashboardActivity extends StatelessWidget {
-  const _DashboardActivity({required this.repository});
-  final PracticumRepository repository;
+class _DonutPainter extends CustomPainter {
+  const _DonutPainter({required this.values, required this.colors});
+  final List<int> values;
+  final List<Color> colors;
 
   @override
-  Widget build(BuildContext context) => SectionCard(
-    title: 'Recent Activity',
-    child: StreamBuilder<List<ActivityLogRecord>>(
-      stream: repository.watchActivityLogs(),
-      builder: (context, snapshot) {
-        final records = (snapshot.data ?? const <ActivityLogRecord>[])
-            .take(6)
-            .toList();
-        if (records.isEmpty) {
-          return const Text('No recent activity.');
-        }
-        return Column(
-          children: records
-              .map(
-                (record) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.history, size: 19),
-                  title: Text(
-                    record.action,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(record.userName),
-                  trailing: Text(
-                    DateFormat.MMMd().format(record.createdAt),
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
-              )
-              .toList(),
-        );
-      },
-    ),
-  );
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+    if (total == 0) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    final rect = Rect.fromCircle(center: center, radius: size.shortestSide / 2 - 5);
+    var start = -math.pi / 2;
+    for (var index = 0; index < values.length; index++) {
+      final sweep = values[index] / total * math.pi * 2;
+      final paint = Paint()
+        ..color = colors[index % colors.length]
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 13
+        ..strokeCap = StrokeCap.butt;
+      canvas.drawArc(rect, start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.colors != colors;
 }
 
 class _StudentSummary extends StatelessWidget {
@@ -479,11 +895,14 @@ class _StudentSummary extends StatelessWidget {
     required this.student,
     required this.requirements,
     required this.profile,
+    required this.dtr,
     required this.onOpen,
   });
+
   final AppUser? student;
   final List<RequirementRecord> requirements;
   final InternshipProfileRecord? profile;
+  final List<DtrRecord> dtr;
   final VoidCallback? onOpen;
 
   @override
@@ -500,68 +919,162 @@ class _StudentSummary extends StatelessWidget {
         .where((record) => record.status == ReviewStatus.verified)
         .length;
     final progress = documents.isEmpty ? 0.0 : verified / documents.length;
+    final hours = dtr
+        .where(
+          (item) =>
+              item.studentId == student!.uid &&
+              item.status == ReviewStatus.verified,
+        )
+        .fold<double>(0, (sum, item) => sum + item.renderedHours);
+
     return SectionCard(
       title: 'Student Record',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 30,
-            child: Text(
-              student!.displayName.isEmpty ? '?' : student!.displayName[0],
-            ),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 21,
+                backgroundColor: const Color(0xFFE8F2FF),
+                foregroundColor: AppTheme.deepBlue,
+                child: Text(
+                  student!.displayName.isEmpty ? '?' : student!.displayName[0],
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student!.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      student!.studentNumber ?? '',
+                      style: const TextStyle(
+                        fontSize: 8.5,
+                        color: AppTheme.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              StatusBadge(profile?.status ?? 'Not configured', compact: true),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            student!.displayName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+          const SizedBox(height: 7),
+          WorkspaceTabs(
+            labels: const ['Overview', 'Documents', 'Evaluation'],
+            selectedIndex: 0,
+            onSelected: (_) {},
           ),
-          Text(student!.studentNumber ?? '', textAlign: TextAlign.center),
-          const Divider(height: 28),
-          _row('Status', profile?.status ?? 'Not configured'),
-          _row('Program', student!.program ?? 'Not set'),
-          _row(
+          const SizedBox(height: 9),
+          const Text(
+            'Internship Details',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          InfoRow('Status', profile?.status ?? 'Not configured', labelWidth: 74),
+          InfoRow(
             'Placement',
             profile?.companyName.isNotEmpty == true
                 ? profile!.companyName
                 : 'Unassigned',
+            labelWidth: 74,
           ),
-          const SizedBox(height: 14),
-          Text('Requirement progress: $verified/${documents.length}'),
+          InfoRow(
+            'Supervisor',
+            profile?.supervisorName.isNotEmpty == true
+                ? profile!.supervisorName
+                : '—',
+            labelWidth: 74,
+          ),
+          InfoRow('Start Date', shortDate(profile?.startDate), labelWidth: 74),
+          InfoRow('End Date', shortDate(profile?.endDate), labelWidth: 74),
+          const Divider(height: 18),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Requirement Progress',
+                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                '$verified of ${documents.length} submitted',
+                style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFEEF1F5),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 9),
+          ...documents.take(5).map(
+                (record) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2.5),
+                  child: Row(
+                    children: [
+                      Icon(
+                        record.status == ReviewStatus.verified
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
+                        size: 13,
+                        color: record.status == ReviewStatus.verified
+                            ? AppTheme.success
+                            : AppTheme.muted,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          record.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 8.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          const Divider(height: 18),
+          const Text(
+            'Hours Rendered',
+            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${hours.toStringAsFixed(1)} / ${profile?.requiredHours ?? 400} hours',
+            style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
+          ),
+          const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: onOpen,
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('View full record'),
+            icon: const Icon(Icons.open_in_new, size: 14),
+            label: const Text('View Record'),
+          ),
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.description_outlined, size: 14),
+            label: const Text('Review Documents'),
           ),
         ],
       ),
     );
   }
-
-  Widget _row(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 76,
-          child: Text(label, style: const TextStyle(color: Colors.black54)),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    ),
-  );
 }

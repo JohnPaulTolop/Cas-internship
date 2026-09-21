@@ -20,6 +20,7 @@ class PublicEvaluationScreen extends StatefulWidget {
 
 class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   final _comments = TextEditingController();
+  final _email = TextEditingController();
   final _ratings = <String, int>{
     'professionalism': 3,
     'workQuality': 3,
@@ -28,11 +29,21 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     'initiative': 3,
   };
   bool _submitting = false;
+  bool _verifying = false;
+  bool _authorized = false;
   String? _error;
+  late Future<PublicEvaluationAccessRecord> _evaluationFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _evaluationFuture = widget.repository.loadPublicEvaluation(widget.token);
+  }
 
   @override
   void dispose() {
     _comments.dispose();
+    _email.dispose();
     super.dispose();
   }
 
@@ -43,12 +54,12 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF0F5FF), Color(0xFFE8E4FF)],
+          colors: [Color(0xFFF8FBFF), Color(0xFFEEF5FF), Color(0xFFF7F9FC)],
         ),
       ),
       child: SafeArea(
-        child: StreamBuilder<SupervisorEvaluationRecord?>(
-          stream: widget.repository.watchPublicEvaluation(widget.token),
+        child: FutureBuilder<PublicEvaluationAccessRecord>(
+          future: _evaluationFuture,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return _Message(
@@ -93,17 +104,17 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
+                  constraints: const BoxConstraints(maxWidth: 700),
                   child: Card(
                     child: Padding(
-                      padding: const EdgeInsets.all(32),
+                      padding: const EdgeInsets.all(30),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           const Icon(
                             Icons.workspace_premium_outlined,
                             color: AppTheme.blue,
-                            size: 48,
+                            size: 42,
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -117,7 +128,66 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                             '${evaluation.studentName} • ${evaluation.companyName}',
                             textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 24),
+                          if (!_authorized) ...[
+                            Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceBlue,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Text(
+                                    'Access Verification',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppTheme.navy,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Enter the email address registered for ${evaluation.supervisorName}. The evaluation form will unlock only when the email and secure link match.',
+                                    style: const TextStyle(
+                                      color: AppTheme.muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  TextField(
+                                    controller: _email,
+                                    keyboardType: TextInputType.emailAddress,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Registered supervisor email',
+                                      prefixIcon: Icon(Icons.email_outlined),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  FilledButton.icon(
+                                    onPressed: _verifying ? null : _verifyAccess,
+                                    icon: _verifying
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.verified_user_outlined),
+                                    label: const Text('Verify Access'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_error != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                _error!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ] else ...[
                           ..._ratings.keys.map(
                             (key) => _RatingField(
                               label: _label(key),
@@ -161,10 +231,11 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                             'This link can be submitted only once.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
+                              fontSize: 11.5,
+                              color: AppTheme.muted,
                             ),
                           ),
+                          ],
                         ],
                       ),
                     ),
@@ -186,6 +257,40 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     _ => 'Initiative',
   };
 
+  Future<void> _verifyAccess() async {
+    final entered = _email.text.trim();
+    if (entered.isEmpty || !entered.contains('@')) {
+      setState(() {
+        _error = 'Enter the registered supervisor email address.';
+      });
+      return;
+    }
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.verifyPublicEvaluationAccess(
+        token: widget.token,
+        supervisorEmail: entered,
+      );
+      if (mounted) {
+        setState(() {
+          _verifying = false;
+          _authorized = true;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _verifying = false;
+          _authorized = false;
+          _error = '$error';
+        });
+      }
+    }
+  }
+
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
@@ -194,9 +299,16 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     try {
       await widget.repository.submitSupervisorEvaluation(
         token: widget.token,
+        supervisorEmail: _email.text.trim(),
         ratings: Map.unmodifiable(_ratings),
         comments: _comments.text,
       );
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _evaluationFuture = widget.repository.loadPublicEvaluation(widget.token);
+        });
+      }
     } catch (error) {
       if (mounted) {
         setState(() {

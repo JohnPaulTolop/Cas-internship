@@ -25,7 +25,9 @@ class ReportExportService {
       row.requirements++;
       if (record.status == ReviewStatus.verified) row.verified++;
     }
-    for (final record in dtr) {
+    for (final record in dtr.where(
+      (item) => item.status == ReviewStatus.verified,
+    )) {
       final row = rows.putIfAbsent(
         record.studentId,
         () => _MutableReportRow(record.studentName),
@@ -52,6 +54,83 @@ class ReportExportService {
         .toList();
     result.sort((a, b) => a.studentName.compareTo(b.studentName));
     return result;
+  }
+
+
+  Future<void> exportGenericCsv({
+    required String title,
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) async {
+    final buffer = StringBuffer();
+    buffer.writeln(headers.map(_csv).join(','));
+    for (final row in rows) {
+      buffer.writeln(row.map(_csv).join(','));
+    }
+    await _save(
+      '${_safeFileName(title)}-${_stamp()}.csv',
+      Uint8List.fromList(utf8.encode(buffer.toString())),
+    );
+  }
+
+  Future<void> exportGenericExcel({
+    required String title,
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) async {
+    String cell(String value) =>
+        '<Cell><Data ss:Type="String">${_xml(value)}</Data></Cell>';
+    final headerXml = headers.map(cell).join();
+    final bodyXml = rows
+        .map((row) => '<Row>${row.map(cell).join()}</Row>')
+        .join('\n');
+    final xml = '''<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Report"><Table>
+ <Row>$headerXml</Row>
+ $bodyXml
+ </Table></Worksheet></Workbook>''';
+    await _save(
+      '${_safeFileName(title)}-${_stamp()}.xls',
+      Uint8List.fromList(utf8.encode(xml)),
+    );
+  }
+
+  Future<void> exportGenericPdf({
+    required String title,
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) async {
+    final document = pw.Document();
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        build: (context) => [
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 5),
+          pw.Text(
+            'Generated ${DateFormat.yMMMMd().add_jm().format(DateTime.now())}',
+          ),
+          pw.SizedBox(height: 14),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.4),
+            children: [
+              _pdfRow(headers, header: true),
+              ...rows.map(_pdfRow),
+            ],
+          ),
+        ],
+      ),
+    );
+    await _save(
+      '${_safeFileName(title)}-${_stamp()}.pdf',
+      await document.save(),
+    );
   }
 
   Future<void> exportCsv(List<ReportRow> rows) async {
@@ -171,6 +250,11 @@ class ReportExportService {
       bytes: bytes,
     );
   }
+
+  String _safeFileName(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
 
   String _stamp() => DateFormat('yyyyMMdd-HHmm').format(DateTime.now());
 

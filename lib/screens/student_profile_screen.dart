@@ -6,6 +6,8 @@ import '../models/app_user.dart';
 import '../models/records.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
+import 'advanced_reports_screen.dart';
+import 'document_workflow_screens.dart';
 import 'workflow_shared.dart';
 
 class StudentDirectoryScreen extends StatefulWidget {
@@ -30,7 +32,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
     title: 'Student Internship Records',
     subtitle: 'Open a student profile to monitor placement and progress.',
     child: StreamBuilder<List<AppUser>>(
-      stream: widget.repository.watchUsers(role: UserRole.student),
+      stream: widget.repository.watchStudentsFor(widget.actor),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Text('${snapshot.error}');
@@ -161,6 +163,16 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                 title: 'Student Internship Profile',
                 subtitle: 'Consolidated internship and requirement record.',
                 actions: [
+                  if (actor.role == UserRole.admin)
+                    FilledButton.icon(
+                      onPressed: () => _showCoordinatorAssignment(context),
+                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                      label: Text(
+                        student.coordinatorId == null
+                            ? 'Assign Program Coordinator'
+                            : 'Change Program Coordinator',
+                      ),
+                    ),
                   OutlinedButton.icon(
                     onPressed: () => _editProfile(context, profile),
                     icon: const Icon(Icons.edit_outlined),
@@ -176,7 +188,7 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                         final wide = constraints.maxWidth >= 920;
                         final main = Column(
                           children: [
-                            _InternshipDetails(profile: profile),
+                            _InternshipDetails(profile: profile, coordinatorName: student.coordinatorName),
                             const SizedBox(height: 14),
                             _ProgressCard(
                               completedHours: hours,
@@ -195,7 +207,18 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                             const SizedBox(height: 14),
                             _QuickActions(
                               profile: profile,
+                              actor: actor,
+                              student: student,
+                              repository: repository,
                               onEdit: () => _editProfile(context, profile),
+                              onAssignCoordinator: actor.role == UserRole.admin
+                                  ? () => _showCoordinatorAssignment(context)
+                                  : null,
+                              onRemoveCoordinator:
+                                  actor.role == UserRole.admin &&
+                                      student.coordinatorId != null
+                                  ? () => _removeCoordinatorAssignment(context)
+                                  : null,
                             ),
                           ],
                         );
@@ -224,6 +247,168 @@ class StudentInternshipProfileScreen extends StatelessWidget {
     },
   );
 
+  Future<void> _showCoordinatorAssignment(BuildContext context) async {
+    if (actor.role != UserRole.admin) return;
+
+    final coordinators =
+        (await repository.watchUsers(role: UserRole.coordinator).first)
+            .where(
+              (coordinator) =>
+                  coordinator.active && coordinator.isApprovedCoordinator,
+            )
+            .toList()
+          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+
+    if (!context.mounted) return;
+    if (coordinators.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No approved Program Coordinator accounts are available yet.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    AppUser selected = coordinators.firstWhere(
+      (item) => item.uid == student.coordinatorId,
+      orElse: () => coordinators.first,
+    );
+
+    final assigned = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            student.coordinatorId == null
+                ? 'Assign Program Coordinator'
+                : 'Change Program Coordinator',
+          ),
+          content: SizedBox(
+            width: 430,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Assign ${student.displayName} to an approved Program Coordinator.',
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<AppUser>(
+                  isExpanded: true,
+                  initialValue: selected,
+                  decoration: const InputDecoration(
+                    labelText: 'Program Coordinator',
+                    prefixIcon: Icon(Icons.supervisor_account_outlined),
+                  ),
+                  items: coordinators
+                      .map(
+                        (coordinator) => DropdownMenuItem<AppUser>(
+                          value: coordinator,
+                          child: Text(
+                            coordinator.displayName,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => selected = value);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                try {
+                  await repository.assignStudent(
+                    actor: actor,
+                    student: student,
+                    coordinator: selected,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, true);
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('$error')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (assigned == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${student.displayName} was assigned to ${selected.displayName}.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeCoordinatorAssignment(BuildContext context) async {
+    if (actor.role != UserRole.admin || student.coordinatorId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove Program Coordinator?'),
+        content: Text(
+          'Remove the current Program Coordinator assignment from ${student.displayName}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await repository.assignStudent(
+        actor: actor,
+        student: student,
+        coordinator: null,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Program Coordinator assignment removed.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$error')),
+        );
+      }
+    }
+  }
+
   Future<void> _editProfile(
     BuildContext context,
     InternshipProfileRecord profile,
@@ -245,7 +430,7 @@ class StudentInternshipProfileScreen extends StatelessWidget {
       text: profile.supervisorPhone,
     );
     final remarks = TextEditingController(text: profile.coordinatorRemarks);
-    var status = profile.status;
+    final status = profile.status;
     var placementStatus = profile.placementStatus;
     var startDate = profile.startDate;
     var endDate = profile.endDate;
@@ -264,13 +449,19 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                   _field(program, 'Program'),
                   _field(yearLevel, 'Year level'),
                   _field(academicYear, 'Academic year'),
-                  _dropdown('Internship status', status, const [
-                    'Pending Requirements',
-                    'For Verification',
-                    'Ready for Deployment',
-                    'Ongoing Internship',
-                    'Completed',
-                  ], (value) => setDialogState(() => status = value)),
+                  SizedBox(
+                    width: 314,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'System internship stage',
+                        helperText: 'Updated automatically from requirements, deployment, DTR hours, and evaluation.',
+                      ),
+                      child: Text(
+                        status,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
                   _dropdown('Placement status', placementStatus, const [
                     'Unassigned',
                     'Processing',
@@ -382,6 +573,7 @@ class StudentInternshipProfileScreen extends StatelessWidget {
   ) => SizedBox(
     width: 310,
     child: DropdownButtonFormField<String>(
+      isExpanded: true,
       initialValue: values.contains(value) ? value : values.first,
       decoration: InputDecoration(labelText: label),
       items: values
@@ -426,110 +618,201 @@ class _ProfileHeader extends StatelessWidget {
   final InternshipProfileRecord profile;
 
   @override
-  Widget build(BuildContext context) => SectionCard(
-    child: Wrap(
-      spacing: 18,
-      runSpacing: 14,
-      crossAxisAlignment: WrapCrossAlignment.center,
+  Widget build(BuildContext context) => Card(
+    child: Column(
       children: [
-        CircleAvatar(
-          radius: 34,
-          child: Text(
-            student.displayName.isEmpty ? '?' : student.displayName[0],
-          ),
-        ),
-        SizedBox(
-          width: 260,
-          child: Column(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                student.displayName,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: const Color(0xFFE7EBF0),
+                foregroundColor: AppTheme.muted,
+                child: Text(
+                  student.displayName.isEmpty
+                      ? '?'
+                      : student.displayName[0].toUpperCase(),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
               ),
-              Text(student.studentNumber ?? 'No student number'),
-              Text(student.email),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.displayName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: AppTheme.text,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Student ID\n${student.studentNumber ?? 'Not set'}',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 9.3,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _HeaderValue('Program', student.program ?? 'Not set'),
+              ),
+              Expanded(
+                flex: 2,
+                child: _HeaderValue('Year Level', student.yearLevel ?? 'Not set'),
+              ),
+              Expanded(
+                flex: 2,
+                child: _HeaderValue('Email', student.email),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 150,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Internship Status',
+                      style: TextStyle(fontSize: 8.8, color: AppTheme.muted),
+                    ),
+                    const SizedBox(height: 3),
+                    StatusBadge(profile.status, compact: true),
+                    const SizedBox(height: 7),
+                    const Text(
+                      'Placement',
+                      style: TextStyle(fontSize: 8.8, color: AppTheme.muted),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      profile.companyName.isEmpty
+                          ? profile.placementStatus
+                          : profile.companyName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        _HeaderValue('Program', student.program ?? 'Not set'),
-        _HeaderValue('Year level', student.yearLevel ?? 'Not set'),
-        _HeaderValue('Academic year', student.academicYear ?? 'Not set'),
-        _HeaderValue('Internship status', profile.status, badge: true),
-        _HeaderValue('Placement', profile.placementStatus, badge: true),
+        const Divider(height: 1),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _ProfileTabs(),
+          ),
+        ),
       ],
+    ),
+  );
+}
+
+class _ProfileTabs extends StatelessWidget {
+  const _ProfileTabs();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: const [
+      _ProfileTab('Overview', active: true),
+      _ProfileTab('Documents'),
+      _ProfileTab('Evaluation'),
+      _ProfileTab('Attendance'),
+      _ProfileTab('Remarks'),
+    ],
+  );
+}
+
+class _ProfileTab extends StatelessWidget {
+  const _ProfileTab(this.label, {this.active = false});
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    decoration: BoxDecoration(
+      border: Border(
+        bottom: BorderSide(
+          width: 2,
+          color: active ? AppTheme.blue : Colors.transparent,
+        ),
+      ),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: active ? AppTheme.blue : AppTheme.muted,
+        fontSize: 9.5,
+        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+      ),
     ),
   );
 }
 
 class _HeaderValue extends StatelessWidget {
-  const _HeaderValue(this.label, this.value, {this.badge = false});
+  const _HeaderValue(this.label, this.value);
   final String label;
   final String value;
-  final bool badge;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 150,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: Colors.black54),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        value,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 9.4,
+          color: AppTheme.text,
+          fontWeight: FontWeight.w700,
         ),
-        const SizedBox(height: 4),
-        badge
-            ? StatusBadge(value)
-            : Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-      ],
-    ),
+      ),
+    ],
   );
 }
 
 class _InternshipDetails extends StatelessWidget {
-  const _InternshipDetails({required this.profile});
+  const _InternshipDetails({required this.profile, this.coordinatorName});
   final InternshipProfileRecord profile;
+  final String? coordinatorName;
 
   @override
   Widget build(BuildContext context) => SectionCard(
     title: 'Internship Details',
-    child: Wrap(
-      spacing: 24,
-      runSpacing: 12,
+    child: Column(
       children: [
-        _detail('Company', profile.companyName),
-        _detail('Department', profile.department),
-        _detail('Position', profile.position),
-        _detail('Start date', shortDate(profile.startDate)),
-        _detail('End date', shortDate(profile.endDate)),
-        _detail('Required hours', '${profile.requiredHours}'),
-        _detail('Supervisor', profile.supervisorName),
-        _detail('Supervisor email', profile.supervisorEmail),
-      ],
-    ),
-  );
-
-  Widget _detail(String label, String value) => SizedBox(
-    width: 220,
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 92,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.black54, fontSize: 12),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value.isEmpty ? '—' : value,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
+        InfoRow('Company', profile.companyName, labelWidth: 105),
+        InfoRow('Department', profile.department, labelWidth: 105),
+        InfoRow('Position', profile.position, labelWidth: 105),
+        InfoRow('Start Date', shortDate(profile.startDate), labelWidth: 105),
+        InfoRow('End Date', shortDate(profile.endDate), labelWidth: 105),
+        InfoRow('Required Hours', '${profile.requiredHours}', labelWidth: 105),
+        InfoRow('Completed Hours', 'Calculated from verified DTR', labelWidth: 105),
+        InfoRow('Program Coordinator', coordinatorName ?? 'Unassigned', labelWidth: 105),
+        InfoRow('Company Supervisor', profile.supervisorName, labelWidth: 105),
       ],
     ),
   );
@@ -549,22 +832,26 @@ class _ProgressCard extends StatelessWidget {
         ? 0.0
         : (completedHours / requiredHours).clamp(0, 1).toDouble();
     return SectionCard(
-      title: 'Internship Progress',
+      title: 'Progress',
       trailing: Text(
         '${(progress * 100).round()}%',
-        style: const TextStyle(fontWeight: FontWeight.w800),
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: const Color(0xFFEEF1F5),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
           Text(
-            '${completedHours.toStringAsFixed(1)} of $requiredHours verified hours',
+            'Completed Hours: ${completedHours.toStringAsFixed(1)} / $requiredHours',
+            style: const TextStyle(fontSize: 9.4, color: AppTheme.muted),
           ),
         ],
       ),
@@ -580,24 +867,35 @@ class _RequiredDocuments extends StatelessWidget {
   Widget build(BuildContext context) => SectionCard(
     title: 'Required Documents',
     child: records.isEmpty
-        ? const Text('No submissions yet.')
+        ? const Text(
+            'No submissions yet.',
+            style: TextStyle(fontSize: 10, color: AppTheme.muted),
+          )
         : Column(
-            children: records
-                .take(8)
-                .map(
-                  (record) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.description_outlined, size: 20),
-                    title: Text(
-                      record.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+            children: records.take(8).map((record) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.description_outlined,
+                      size: 15,
+                      color: AppTheme.muted,
                     ),
-                    trailing: StatusBadge(record.status.label),
-                  ),
-                )
-                .toList(),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        record.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 9.3),
+                      ),
+                    ),
+                    StatusBadge(record.status.label, compact: true),
+                  ],
+                ),
+              );
+            }).toList(),
           ),
   );
 }
@@ -622,20 +920,35 @@ class _RecentActivity extends StatelessWidget {
             .take(6)
             .toList();
         if (records.isEmpty) {
-          return const Text('No recent activity.');
+          return const Text(
+            'No recent activity.',
+            style: TextStyle(fontSize: 10, color: AppTheme.muted),
+          );
         }
         return Column(
-          children: records
-              .map(
-                (record) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.history, size: 20),
-                  title: Text(record.action),
-                  trailing: Text(DateFormat.MMMd().format(record.createdAt)),
-                ),
-              )
-              .toList(),
+          children: records.map((record) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  const Icon(Icons.history, size: 15, color: AppTheme.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      record.action,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 9.3),
+                    ),
+                  ),
+                  Text(
+                    DateFormat.MMMd().format(record.createdAt),
+                    style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
         );
       },
     ),
@@ -643,9 +956,23 @@ class _RecentActivity extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.profile, required this.onEdit});
+  const _QuickActions({
+    required this.profile,
+    required this.actor,
+    required this.student,
+    required this.repository,
+    required this.onEdit,
+    this.onAssignCoordinator,
+    this.onRemoveCoordinator,
+  });
+
   final InternshipProfileRecord profile;
+  final AppUser actor;
+  final AppUser student;
+  final PracticumRepository repository;
   final VoidCallback onEdit;
+  final VoidCallback? onAssignCoordinator;
+  final VoidCallback? onRemoveCoordinator;
 
   @override
   Widget build(BuildContext context) => SectionCard(
@@ -653,21 +980,99 @@ class _QuickActions extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (onAssignCoordinator != null) ...[
+          FilledButton.icon(
+            onPressed: onAssignCoordinator,
+            icon: const Icon(Icons.person_add_alt_1_outlined, size: 15),
+            label: Text(
+              student.coordinatorId == null
+                  ? 'Assign Program Coordinator'
+                  : 'Change Program Coordinator',
+            ),
+          ),
+          const SizedBox(height: 7),
+        ],
+        if (onRemoveCoordinator != null) ...[
+          OutlinedButton.icon(
+            onPressed: onRemoveCoordinator,
+            icon: const Icon(Icons.person_remove_outlined, size: 15),
+            label: const Text('Remove Coordinator Assignment'),
+          ),
+          const SizedBox(height: 7),
+        ],
         FilledButton.icon(
-          onPressed: onEdit,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Update internship status'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Document Repository')),
+                body: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: DocumentRepositoryScreen(
+                    user: actor,
+                    repository: repository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.description_outlined, size: 15),
+          label: const Text('View All Documents'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 7),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Evaluations & Reports')),
+                body: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: AdvancedReportsScreen(
+                    user: actor,
+                    repository: repository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.assignment_turned_in_outlined, size: 15),
+          label: const Text('View Evaluation'),
+        ),
+        const SizedBox(height: 7),
         OutlinedButton.icon(
           onPressed: onEdit,
-          icon: const Icon(Icons.business_outlined),
-          label: const Text('Update placement'),
+          icon: const Icon(Icons.edit_outlined, size: 15),
+          label: const Text('Update Placement / Internship Details'),
+        ),
+        const SizedBox(height: 7),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Student Report')),
+                body: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: AdvancedReportsScreen(
+                    user: actor,
+                    repository: repository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.summarize_outlined, size: 15),
+          label: const Text('Generate Student Report'),
         ),
         if (profile.coordinatorRemarks.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text('Remarks', style: Theme.of(context).textTheme.labelLarge),
-          Text(profile.coordinatorRemarks),
+          const Text(
+            'Remarks',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            profile.coordinatorRemarks,
+            style: const TextStyle(fontSize: 9.3, color: AppTheme.muted),
+          ),
         ],
       ],
     ),

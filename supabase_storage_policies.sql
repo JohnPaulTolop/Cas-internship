@@ -47,13 +47,13 @@ with check (
   and (storage.foldername(name))[1] = (auth.jwt()->>'sub')
 );
 
-create policy "Owners and staff delete internship documents"
+create policy "Owners and admins delete internship documents"
 on storage.objects for delete
 to anon, authenticated
 using (
   bucket_id = 'internship-documents'
   and (
     (storage.foldername(name))[1] = (auth.jwt()->>'sub')
-    or (auth.jwt()->>'app_role') in ('admin', 'coordinator')
+    or (auth.jwt()->>'app_role') = 'admin'
   )
 );

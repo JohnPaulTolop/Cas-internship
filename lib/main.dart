@@ -81,36 +81,59 @@ class BootstrapFailureApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
     home: Scaffold(
+      backgroundColor: AppTheme.background,
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.cloud_off_outlined,
-                  size: 64,
-                  color: Colors.red,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger.withValues(alpha: .08),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.cloud_off_outlined,
+                        size: 30,
+                        color: AppTheme.danger,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Backend configuration could not be loaded',
+                      style: TextStyle(
+                        color: AppTheme.navy,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '$error',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.muted),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Check firebase_options.dart and the Supabase configuration described in SETUP.md.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.muted),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Backend configuration could not be loaded',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text('$error', textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                const Text(
-                  'Check firebase_options.dart and the Supabase configuration '
-                  'described in SETUP.md.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
+              ),
             ),
           ),
         ),

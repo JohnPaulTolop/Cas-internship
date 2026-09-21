@@ -6,16 +6,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function profile() {
+    function currentProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isAdmin() {
-      return signedIn() && profile().role == 'admin' && profile().active == true;
+      return signedIn() &&
+        currentProfile().role == 'admin' &&
+        currentProfile().active == true;
     }
 
     function isCoordinator() {
-      return signedIn() && profile().role == 'coordinator' && profile().active == true;
+      return signedIn() &&
+        currentProfile().role == 'coordinator' &&
+        currentProfile().active == true &&
+        currentProfile().approvalStatus == 'approved';
     }
 
     function isStaff() {
@@ -23,179 +28,322 @@ service cloud.firestore {
     }
 
     function isStudent() {
-      return signedIn() && profile().role == 'student' && profile().active == true;
+      return signedIn() &&
+        currentProfile().role == 'student' &&
+        currentProfile().active == true;
+    }
+
+    // Student accounts can exist before a Program Coordinator is assigned.
+    // Map.get(..., null) keeps permission checks valid when coordinatorId is
+    // not present yet, while still preventing a student from submitting data
+    // under another coordinator's UID.
+    function currentCoordinatorId() {
+      return currentProfile().get('coordinatorId', null);
+    }
+
+    function assignedStudent(studentId) {
+      return isCoordinator() &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.role == 'student' &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.coordinatorId == request.auth.uid;
+    }
+
+    function ownStudentRecord(studentId) {
+      return isStudent() && studentId == request.auth.uid;
+    }
+
+    function coordinatorOwnsResource() {
+      return isCoordinator() && resource.data.coordinatorId == request.auth.uid;
+    }
+
+    function coordinatorOwnsIncoming() {
+      return isCoordinator() && request.resource.data.coordinatorId == request.auth.uid;
     }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
+      allow read: if signedIn() && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        (isCoordinator() &&
+          resource.data.role == 'student' &&
+          resource.data.coordinatorId == request.auth.uid)
+      );
+
+      // Public registration creates only either an active Student Intern profile
+      // or a pending/inactive Program Coordinator request. Privileged roles are
+      // never self-assigned from the client.
       allow create: if (
         signedIn() &&
         request.auth.uid == userId &&
         request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'role', 'studentNumber', 'active',
-          'createdAt', 'updatedAt'
+          'email', 'displayName', 'role', 'studentNumber', 'staffId',
+          'department', 'approvalStatus', 'active', 'createdAt', 'updatedAt'
         ]) &&
         request.resource.data.email == request.auth.token.email &&
         request.resource.data.displayName is string &&
         request.resource.data.displayName.size() > 1 &&
-        request.resource.data.studentNumber is string &&
-        request.resource.data.studentNumber.size() > 0 &&
-        request.resource.data.role == 'student' &&
-        request.resource.data.active == true
+        (
+          (
+            request.resource.data.role == 'student' &&
+            request.resource.data.studentNumber is string &&
+            request.resource.data.studentNumber.size() > 0 &&
+            request.resource.data.staffId == null &&
+            request.resource.data.department == null &&
+            request.resource.data.approvalStatus == 'approved' &&
+            request.resource.data.active == true
+          ) ||
+          (
+            request.resource.data.role == 'coordinator' &&
+            request.resource.data.studentNumber == null &&
+            request.resource.data.staffId is string &&
+            request.resource.data.staffId.size() > 0 &&
+            request.resource.data.department is string &&
+            request.resource.data.department.size() > 0 &&
+            request.resource.data.approvalStatus == 'pending' &&
+            request.resource.data.active == false
+          )
+        )
       ) || isAdmin();
-      allow delete: if isAdmin();
+
       allow update: if isAdmin() || (
         isCoordinator() &&
+        assignedStudent(userId) &&
         resource.data.role == 'student' &&
         request.resource.data.role == 'student' &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly([
-            'coordinatorId', 'coordinatorName', 'program', 'yearLevel',
-            'academicYear', 'updatedAt'
-          ])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'program', 'yearLevel', 'academicYear', 'updatedAt'
+        ])
       ) || (
+        signedIn() &&
         request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'phone', 'photoUrl', 'updatedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'phone', 'photoUrl', 'updatedAt'
+        ])
       );
+
+      allow delete: if isAdmin();
     }
 
     match /requirements/{requirementId} {
-      allow read: if isStaff() || (
-        isStudent() && resource.data.studentId == request.auth.uid
-      );
+      allow read: if isAdmin() ||
+        (isCoordinator() && resource.data.coordinatorId == request.auth.uid) ||
+        (isStudent() && resource.data.studentId == request.auth.uid);
+
       allow create: if isStudent() &&
         request.resource.data.studentId == request.auth.uid &&
-        request.resource.data.status == 'pending';
-      allow update: if isStaff() || (
+        request.resource.data.status == 'pending' &&
+        request.resource.data.archived == false &&
+        request.resource.data.coordinatorId == currentCoordinatorId();
+
+      allow update: if isAdmin() || (
+        isCoordinator() &&
+        resource.data.coordinatorId == request.auth.uid &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.coordinatorId == resource.data.coordinatorId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'remarks', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ])
+      ) || (
         isStudent() &&
         resource.data.studentId == request.auth.uid &&
         request.resource.data.studentId == request.auth.uid &&
+        (resource.data.status == 'needs_revision' || resource.data.status == 'rejected') &&
         request.resource.data.status == 'pending' &&
+        request.resource.data.coordinatorId == currentCoordinatorId() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'title', 'fileName', 'storagePath', 'status', 'remarks',
-          'submittedAt', 'updatedAt', 'version'
+          'storagePath', 'fileName', 'status', 'remarks', 'coordinatorId',
+          'academicYear', 'version', 'submittedAt', 'updatedAt'
         ])
       );
-      allow delete: if isAdmin();
-    }
 
-    match /dtr_entries/{entryId} {
-      allow read, create, update: if isStaff();
-      allow delete: if isAdmin();
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if isStaff() || (
-        isStudent() &&
-        (
-          resource.data.targetRole == 'student' ||
-          resource.data.targetRole == 'all' ||
-          resource.data.targetRole == 'user:' + request.auth.uid
-        )
-      );
-      allow create: if isStaff();
-      allow update: if isStaff() || (
-        isStudent() &&
-        (
-          resource.data.targetRole == 'student' ||
-          resource.data.targetRole == 'all' ||
-          resource.data.targetRole == 'user:' + request.auth.uid
-        ) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['readBy', 'updatedAt'])
-      );
-      allow delete: if isAdmin();
-    }
-
-    match /moas/{moaId} {
-      allow read, create, update: if isStaff();
-      allow delete: if isStaff();
-    }
-
-    match /requirement_definitions/{definitionId} {
-      allow read: if isStaff() || (isStudent() && resource.data.active == true);
-      allow create, update: if isStaff();
-      allow delete: if isAdmin();
-    }
-
-    match /internship_profiles/{studentId} {
-      allow read: if isStaff() || (isStudent() && request.auth.uid == studentId);
-      allow create, update: if isStaff();
       allow delete: if isAdmin();
     }
 
     match /requirement_versions/{versionId} {
-      allow read: if isStaff() || (
+      allow read: if isAdmin() || (
+        isCoordinator() &&
+        get(/databases/$(database)/documents/requirements/$(resource.data.requirementId)).data.coordinatorId == request.auth.uid
+      ) || (
         isStudent() &&
         get(/databases/$(database)/documents/requirements/$(resource.data.requirementId)).data.studentId == request.auth.uid
       );
-      allow create: if isStaff() || (
+
+      allow create: if isAdmin() || (
+        isCoordinator() &&
+        get(/databases/$(database)/documents/requirements/$(request.resource.data.requirementId)).data.coordinatorId == request.auth.uid
+      ) || (
         isStudent() &&
         get(/databases/$(database)/documents/requirements/$(request.resource.data.requirementId)).data.studentId == request.auth.uid
       );
+
       allow update: if false;
       allow delete: if isAdmin();
     }
 
-    match /tor_records/{recordId} {
-      allow read, create, update: if isStaff();
+    match /dtr_entries/{entryId} {
+      allow read: if isAdmin() ||
+        (isCoordinator() && resource.data.coordinatorId == request.auth.uid) ||
+        (isStudent() && resource.data.studentId == request.auth.uid);
+
+      allow create: if isStudent() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.coordinatorId == currentCoordinatorId() &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.archived == false;
+
+      allow update: if isAdmin() || (
+        isCoordinator() &&
+        resource.data.coordinatorId == request.auth.uid &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.coordinatorId == resource.data.coordinatorId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'remarks', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ])
+      ) || (
+        isStudent() &&
+        resource.data.studentId == request.auth.uid &&
+        (resource.data.status == 'needs_revision' || resource.data.status == 'rejected') &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.coordinatorId == currentCoordinatorId() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'date', 'timeIn', 'timeOut', 'breakMinutes', 'status', 'remarks',
+          'coordinatorId', 'academicYear', 'updatedAt'
+        ])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (
+        signedIn() &&
+        resource.data.active == true &&
+        (
+          resource.data.targetRole == 'all' ||
+          resource.data.targetRole == currentProfile().role ||
+          resource.data.targetRole == 'user:' + request.auth.uid
+        ) &&
+        (resource.data.targetUserId == null || resource.data.targetUserId == request.auth.uid)
+      );
+
+      allow create: if isAdmin() || (
+        isCoordinator() &&
+        request.resource.data.targetUserId is string &&
+        request.resource.data.targetRole == 'user:' + request.resource.data.targetUserId &&
+        assignedStudent(request.resource.data.targetUserId) &&
+        request.resource.data.createdBy == request.auth.uid
+      ) || (
+        isStudent() &&
+        currentCoordinatorId() is string &&
+        request.resource.data.targetUserId == currentCoordinatorId() &&
+        request.resource.data.targetRole == 'user:' + currentCoordinatorId() &&
+        request.resource.data.createdBy == request.auth.uid
+      );
+
+      allow update: if isAdmin() || (
+        signedIn() &&
+        (
+          resource.data.targetRole == 'all' ||
+          resource.data.targetRole == currentProfile().role ||
+          resource.data.targetRole == 'user:' + request.auth.uid
+        ) &&
+        (resource.data.targetUserId == null || resource.data.targetUserId == request.auth.uid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'readBy', 'updatedAt'
+        ])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /moas/{moaId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /partner_institutions/{partnerId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /requirement_definitions/{definitionId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /internship_profiles/{studentId} {
+      allow read: if isAdmin() ||
+        (isCoordinator() && resource.data.coordinatorId == request.auth.uid) ||
+        (isStudent() && request.auth.uid == studentId);
+
+      allow create: if isAdmin() || (
+        isCoordinator() &&
+        assignedStudent(studentId) &&
+        request.resource.data.coordinatorId == request.auth.uid
+      ) || (
+        isStudent() &&
+        request.auth.uid == studentId &&
+        request.resource.data.status in ['Pending Requirements', 'For Verification'] &&
+        request.resource.data.archived == false &&
+        request.resource.data.coordinatorId == currentCoordinatorId() &&
+        request.resource.data.keys().hasOnly([
+          'status', 'coordinatorId', 'academicYear', 'archived', 'updatedAt'
+        ])
+      );
+
+      allow update: if isAdmin() || (
+        isCoordinator() &&
+        assignedStudent(studentId) &&
+        resource.data.coordinatorId == request.auth.uid &&
+        request.resource.data.coordinatorId == request.auth.uid
+      ) || (
+        isStudent() &&
+        request.auth.uid == studentId &&
+        request.resource.data.status in ['Pending Requirements', 'For Verification'] &&
+        request.resource.data.archived == false &&
+        request.resource.data.coordinatorId == currentCoordinatorId() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'coordinatorId', 'academicYear', 'archived', 'updatedAt'
+        ])
+      );
+
       allow delete: if isAdmin();
     }
 
     match /supervisor_evaluations/{token} {
-      allow get: if true;
-      allow list: if isStaff();
-      allow create: if isStaff();
-      allow update: if isStaff() || (
-        resource.data.status == 'pending' &&
-        resource.data.archived == false &&
-        request.resource.data.status == 'submitted' &&
-        request.time < resource.data.expiresAt &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'ratings', 'comments', 'status', 'submittedAt', 'updatedAt'
-        ]) &&
-        request.resource.data.ratings.keys().hasAll([
-          'professionalism', 'workQuality', 'attendance',
-          'communication', 'initiative'
-        ]) &&
-        request.resource.data.ratings.keys().hasOnly([
-          'professionalism', 'workQuality', 'attendance',
-          'communication', 'initiative'
-        ]) &&
-        request.resource.data.ratings.professionalism is int &&
-        request.resource.data.ratings.professionalism >= 1 &&
-        request.resource.data.ratings.professionalism <= 5 &&
-        request.resource.data.ratings.workQuality is int &&
-        request.resource.data.ratings.workQuality >= 1 &&
-        request.resource.data.ratings.workQuality <= 5 &&
-        request.resource.data.ratings.attendance is int &&
-        request.resource.data.ratings.attendance >= 1 &&
-        request.resource.data.ratings.attendance <= 5 &&
-        request.resource.data.ratings.communication is int &&
-        request.resource.data.ratings.communication >= 1 &&
-        request.resource.data.ratings.communication <= 5 &&
-        request.resource.data.ratings.initiative is int &&
-        request.resource.data.ratings.initiative >= 1 &&
-        request.resource.data.ratings.initiative <= 5 &&
-        request.resource.data.comments is string &&
-        request.resource.data.comments.size() <= 3000 &&
-        request.resource.data.submittedAt == request.time &&
-        request.resource.data.updatedAt == request.time
+      // Industry supervisor access is handled by the trusted /api/evaluation
+      // application-server endpoint. Firestore itself is never public.
+      allow read: if isAdmin() ||
+        (isCoordinator() && resource.data.coordinatorId == request.auth.uid) ||
+        (isStudent() && resource.data.studentId == request.auth.uid);
+
+      allow create: if isAdmin() || (
+        isCoordinator() &&
+        request.resource.data.coordinatorId == request.auth.uid &&
+        assignedStudent(request.resource.data.studentId)
       );
+
+      allow update: if isAdmin() || (
+        isCoordinator() && resource.data.coordinatorId == request.auth.uid
+      );
+
       allow delete: if isAdmin();
     }
 
     match /academic_archives/{archiveId} {
-      allow read, create: if isStaff();
+      allow read: if isAdmin() || isCoordinator();
+      allow create: if isAdmin();
       allow update: if false;
       allow delete: if isAdmin();
     }
 
     match /activity_logs/{logId} {
-      allow read: if isStaff();
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAdmin() ||
+        (isCoordinator() && resource.data.userId == request.auth.uid);
+      allow create: if signedIn() &&
+        request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
+    }
+
+    match /tor_records/{recordId} {
+      allow read, create, update, delete: if false;
     }
 
     match /{document=**} {
