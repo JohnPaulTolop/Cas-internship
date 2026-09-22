@@ -78,6 +78,39 @@ class StudentStatusTrackerScreen extends StatelessWidget {
                   return Column(
                     children: [
                       _InternshipStageProgress(stage: stage),
+                       const SizedBox(height: 8),
+                       StreamBuilder<List<String>>(
+                         stream: repository.watchStudentEvaluationStatuses(
+                           user.uid,
+                           user.academicYear,
+                         ),
+                         builder: (context, evaluationSnapshot) {
+                           final statuses =
+                               evaluationSnapshot.data ?? const <String>[];
+
+                           final statusText =
+                               user.academicYear == null ||
+                                       user.academicYear!.trim().isEmpty
+                                   ? 'Academic year is not set. Ask your coordinator to check your internship profile.'
+                                   : evaluationSnapshot.hasError
+                                       ? 'Evaluation status is temporarily unavailable.'
+                                       : !evaluationSnapshot.hasData
+                                           ? 'Checking evaluation statuses...'
+                                           : statuses.isEmpty
+                                               ? 'No evaluation status recorded for this academic year yet. If your supervisor already submitted an evaluation, ask your coordinator to confirm.'
+                                               : statuses.asMap().entries.map((entry) {
+                                                   final label = entry.value == 'submitted'
+                                                       ? 'Submitted'
+                                                       : 'Pending';
+                                                   return 'Evaluation ${entry.key + 1}: $label';
+                                                 }).join('\n');
+                           return SectionCard(
+                             title: 'Supervisor Evaluations',
+                             subtitle: 'Submission status only. Ratings and comments are confidential.',
+                             child: Text(statusText),
+                           );
+                         },
+                       ),
                       const SizedBox(height: 12),
                       Expanded(
                         child: LayoutBuilder(

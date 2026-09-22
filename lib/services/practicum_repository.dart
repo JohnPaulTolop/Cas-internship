@@ -15,6 +15,35 @@ import '../models/workflow_models.dart';
 class PracticumRepository {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
+  // Students receive submission status only, never confidential evaluation data.
+  Stream<bool> watchStudentEvaluationSubmitted(String studentId) =>
+      _db
+          .collection('evaluation_status')
+          .doc(studentId)
+          .snapshots()
+          .map((snapshot) => snapshot.data()?['status'] == 'submitted');
+  // Reads only student-visible status documents, never supervisor evaluations.
+  // Filter by academic year so older evaluations do not appear as current ones.
+  Stream<List<String>> watchStudentEvaluationStatuses(
+    String studentId,
+    String? academicYear,
+  ) {
+    if (academicYear == null || academicYear.trim().isEmpty) {
+      return Stream.value(const <String>[]);
+    }
+
+    return _db
+        .collection('evaluation_status')
+        .where('studentId', isEqualTo: studentId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .where((doc) => doc.data()['academicYear'] == academicYear)
+            .map((doc) => doc.data()['status'])
+            .where((status) => status == 'pending' || status == 'submitted')
+            .cast<String>()
+            .toList());
+  }
+
   Stream<List<RequirementRecord>> watchRequirements(AppUser user) {
     Query<Map<String, dynamic>> query = _db.collection('requirements');
     if (user.role == UserRole.student) {
@@ -269,6 +298,15 @@ class PracticumRepository {
   }
 
   Stream<List<SupervisorEvaluationRecord>> watchEvaluationsFor(AppUser actor) {
+    if (actor.role != UserRole.admin &&
+        actor.role != UserRole.coordinator) {
+      return Stream<List<SupervisorEvaluationRecord>>.error(
+        StateError(
+          'Confidential evaluations are available only to authorized staff.',
+        ),
+      );
+    }
+
     Query<Map<String, dynamic>> query =
         _db.collection('supervisor_evaluations');
     if (actor.role == UserRole.coordinator) {
@@ -435,6 +473,11 @@ class PracticumRepository {
     if (user.role != UserRole.student) {
       throw StateError('Only student interns submit requirement documents.');
     }
+    if (user.academicYear?.trim().isEmpty ?? true) {
+      throw StateError(
+        'Your academic year is not set. Ask your coordinator to update your internship profile before submitting requirements.',
+      );
+    }
     if (!AppConfig.hasSupabaseConfig) {
       throw StateError(AppConfig.missingSupabaseMessage);
     }
@@ -542,6 +585,17 @@ class PracticumRepository {
   }) async {
     if (user.role != UserRole.student || requirement.studentId != user.uid) {
       throw StateError('You cannot replace this requirement.');
+    }
+    final currentAcademicYear = user.academicYear?.trim() ?? '';
+    if (currentAcademicYear.isEmpty) {
+      throw StateError(
+        'Your academic year is not set. Ask your coordinator to update your internship profile before resubmitting requirements.',
+      );
+    }
+    if (requirement.academicYear?.trim() != currentAcademicYear) {
+      throw StateError(
+        'This requirement belongs to another academic year or has no academic year. Ask your coordinator to review it.',
+      );
     }
     if (requirement.status != ReviewStatus.needsRevision &&
         requirement.status != ReviewStatus.rejected) {
@@ -734,10 +788,18 @@ class PracticumRepository {
     await _assertCanManageStudent(actor, studentId);
     await _syncInternshipStage(studentId, actor: actor);
 
-    final evaluations = await _db
+    Query<Map<String, dynamic>> evaluationQuery = _db
         .collection('supervisor_evaluations')
-        .where('studentId', isEqualTo: studentId)
-        .get();
+        .where('studentId', isEqualTo: studentId);
+
+    if (actor.role == UserRole.coordinator) {
+      evaluationQuery = evaluationQuery.where(
+        'coordinatorId',
+        isEqualTo: actor.uid,
+      );
+    }
+
+    final evaluations = await evaluationQuery.get();
     final pending = evaluations.docs
         .where((doc) => doc.data()['statusSyncPending'] == true)
         .toList();
@@ -787,6 +849,11 @@ class PracticumRepository {
       );
     }
     final student = actor;
+    if (student.academicYear?.trim().isEmpty ?? true) {
+      throw StateError(
+        'Your academic year is not set. Ask your coordinator to update your internship profile before recording DTR.',
+      );
+    }
 
     final existing = await _db
         .collection('dtr_entries')
@@ -844,6 +911,17 @@ class PracticumRepository {
   }) async {
     if (student.role != UserRole.student || record.studentId != student.uid) {
       throw StateError('Student interns may correct only their own DTR entries.');
+    }
+    final currentAcademicYear = student.academicYear?.trim() ?? '';
+    if (currentAcademicYear.isEmpty) {
+      throw StateError(
+        'Your academic year is not set. Ask your coordinator to update your internship profile before correcting DTR.',
+      );
+    }
+    if (record.academicYear?.trim() != currentAcademicYear) {
+      throw StateError(
+        'This DTR entry belongs to another academic year or has no academic year. Ask your coordinator to review it.',
+      );
     }
     if (record.status != ReviewStatus.needsRevision &&
         record.status != ReviewStatus.rejected) {
@@ -1503,29 +1581,52 @@ class PracticumRepository {
         validDays > 60) {
       throw ArgumentError('Complete all supervisor evaluation details.');
     }
-    final secureRandom = Random.secure();
-    final token = base64Url
-        .encode(List<int>.generate(24, (_) => secureRandom.nextInt(256)))
-        .replaceAll('=', '');
-    await _db.collection('supervisor_evaluations').doc(token).set({
-      'studentId': student.uid,
-      'studentName': student.displayName,
-      'companyName': companyName.trim(),
-      'supervisorName': supervisorName.trim(),
-      'supervisorEmail': supervisorEmail.trim().toLowerCase(),
-      'coordinatorId':
-          student.coordinatorId ??
-          (actor.role == UserRole.coordinator ? actor.uid : null),
-      'academicYear': student.academicYear,
-      'status': 'pending',
-      'expiresAt': Timestamp.fromDate(
-        DateTime.now().add(Duration(days: validDays)),
-      ),
-      'archived': false,
-      'createdBy': actor.uid,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    if (student.academicYear?.trim().isEmpty ?? true) {
+      throw StateError(
+        'The student academic year is not set. Update the internship profile before creating an evaluation.',
+      );
+    }
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null || currentUser.uid != actor.uid) {
+      throw StateError('Sign in with your staff account to create an evaluation.');
+    }
+
+    final idToken = await currentUser.getIdToken(true);
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('Your staff session has expired. Sign in again.');
+    }
+
+    final response = await http.post(
+      Uri.parse(AppConfig.evaluationApiUrl),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode({
+        'action': 'create',
+        'studentId': student.uid,
+        'companyName': companyName.trim(),
+        'supervisorName': supervisorName.trim(),
+        'supervisorEmail': supervisorEmail.trim().toLowerCase(),
+        'validDays': validDays,
+      }),
+    );
+
+    final payload = response.body.trim().isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 201) {
+      throw StateError(
+        payload['error'] as String? ?? 'Unable to create the evaluation link.',
+      );
+    }
+
+    final token = payload['token'];
+    if (token is! String || token.isEmpty) {
+      throw StateError('Evaluation service did not return a link token.');
+    }
     await _log(
       actor,
       'Created supervisor evaluation for ${student.displayName}',
@@ -1838,6 +1939,12 @@ class PracticumRepository {
       return;
     }
 
+    final currentAcademicYear = (
+      userData['academicYear'] as String? ??
+      profileData['academicYear'] as String? ??
+      ''
+    ).trim();
+
     final program = userData['program'] as String?;
     final definitionsSnapshot =
         await _db.collection('requirement_definitions').get();
@@ -1853,7 +1960,12 @@ class PracticumRepository {
         .get();
     final activeRequirements = requirementSnapshot.docs
         .map(RequirementRecord.fromDoc)
-        .where((record) => !record.archived)
+        .where(
+          (record) =>
+              !record.archived &&
+              record.academicYear?.trim() == currentAcademicYear &&
+              currentAcademicYear.isNotEmpty,
+        )
         .toList();
 
     RequirementRecord? recordFor(RequirementDefinition definition) {
@@ -1915,21 +2027,58 @@ class PracticumRepository {
             .map(DtrRecord.fromDoc)
             .where(
               (record) =>
-                  !record.archived && record.status == ReviewStatus.verified,
+                  !record.archived &&
+                  record.status == ReviewStatus.verified &&
+                  record.academicYear?.trim() == currentAcademicYear &&
+                  currentAcademicYear.isNotEmpty,
             )
             .fold<double>(0, (total, record) => total + record.renderedHours);
 
         final requiredHours =
             (profileData['requiredHours'] as num?)?.toDouble() ?? 400;
-        final evaluationSnapshot = await _db
-            .collection('supervisor_evaluations')
-            .where('studentId', isEqualTo: studentId)
-            .get();
-        final evaluationSubmitted = evaluationSnapshot.docs.any(
-          (doc) =>
-              doc.data()['archived'] != true &&
-              doc.data()['status'] == 'submitted',
-        );
+
+        bool evaluationSubmitted;
+
+        if (actor.role == UserRole.student) {
+          // Students may check only their own non-confidential status.
+          if (studentId != actor.uid) {
+            throw StateError('Cannot check another student evaluation status.');
+          }
+
+          final statusSnapshot = await _db
+              .collection('evaluation_status')
+              .where('studentId', isEqualTo: studentId)
+              .get();
+
+          evaluationSubmitted = currentAcademicYear.isNotEmpty &&
+              statusSnapshot.docs.any(
+                (doc) =>
+                    doc.data()['academicYear'] == currentAcademicYear &&
+                    doc.data()['status'] == 'submitted',
+              );
+        } else {
+          // Authorized staff retain access to confidential evaluations.
+          Query<Map<String, dynamic>> evaluationQuery = _db
+              .collection('supervisor_evaluations')
+              .where('studentId', isEqualTo: studentId);
+
+          if (actor.role == UserRole.coordinator) {
+            evaluationQuery = evaluationQuery.where(
+              'coordinatorId',
+              isEqualTo: actor.uid,
+            );
+          }
+
+          final evaluationSnapshot = await evaluationQuery.get();
+
+          evaluationSubmitted = currentAcademicYear.isNotEmpty &&
+              evaluationSnapshot.docs.any(
+                (doc) =>
+                    doc.data()['archived'] != true &&
+                    doc.data()['academicYear'] == currentAcademicYear &&
+                    doc.data()['status'] == 'submitted',
+              );
+        }
 
         final completionRequirementsVerified =
             completionDefinitions.isEmpty ||

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { reviewCoordinatorRequest } from './coordinator_approval_core.mjs';
 import { ensureStaffClaims } from './staff_claims_core.mjs';
-import { getPublicEvaluation, submitPublicEvaluation, verifyPublicEvaluationAccess } from './evaluation_core.mjs';
+import { createStaffEvaluation, getPublicEvaluation, submitPublicEvaluation, verifyPublicEvaluationAccess } from './evaluation_core.mjs';
 
 const host = process.env.APPROVAL_HOST || '127.0.0.1';
 const port = Number(process.env.APPROVAL_PORT || 8787);
@@ -61,7 +61,12 @@ const server = http.createServer(async (req, res) => {
         send(res, 400, { error: 'Invalid JSON request body.' });
         return;
       }
-      const result = parsed?.action === 'verify'
+      const result = parsed?.action === 'create'
+        ? await createStaffEvaluation({
+            authorization: req.headers.authorization,
+            body: parsed,
+          })
+        : parsed?.action === 'verify'
         ? await verifyPublicEvaluationAccess({ body: parsed })
         : await submitPublicEvaluation({ body: parsed });
       send(res, result.status, result.payload);

@@ -1,5 +1,7 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+import { randomBytes } from 'node:crypto';
 
 function ensureAdminApp() {
   if (getApps().length > 0) return getApps()[0];
@@ -40,7 +42,15 @@ function isCompletionDefinition(data) {
     key.includes('exit form');
 }
 
-async function syncCompletionStage(db, studentId) {
+function isOngoingDefinition(data) {
+  const key = `${data.category || ''} ${data.title || ''}`.toLowerCase();
+  return key.includes('weekly') ||
+    key.includes('dtr') ||
+    key.includes('daily time') ||
+    key.includes('monitoring');
+}
+
+async function syncCompletionStage(db, studentId, submittedAcademicYear) {
   if (!studentId) return;
   const [userDoc, profileDoc, definitionsSnapshot, requirementsSnapshot, dtrSnapshot] =
     await Promise.all([
@@ -55,6 +65,17 @@ async function syncCompletionStage(db, studentId) {
   const user = userDoc.data() || {};
   const profile = profileDoc.data() || {};
   if (profile.archived === true) return;
+  // An evaluation from a previous internship must not complete the current one.
+  const currentAcademicYear = String(
+    user.academicYear || profile.academicYear || '',
+  ).trim();
+  if (
+    !currentAcademicYear ||
+    !submittedAcademicYear ||
+    String(submittedAcademicYear).trim() !== currentAcademicYear
+  ) {
+    return;
+  }
 
   const program = String(user.program || '').trim();
   const definitions = definitionsSnapshot.docs
@@ -67,7 +88,10 @@ async function syncCompletionStage(db, studentId) {
   const completionDefinitions = definitions.filter(isCompletionDefinition);
   const requirements = requirementsSnapshot.docs
     .map((doc) => ({ id: doc.id, ...doc.data() }))
-    .filter((item) => item.archived !== true);
+    .filter((item) =>
+      item.archived !== true &&
+      String(item.academicYear || '').trim() === currentAcademicYear
+    );
 
   const latestFor = (definition) => requirements
     .filter((record) =>
@@ -86,7 +110,11 @@ async function syncCompletionStage(db, studentId) {
 
   const approvedHours = dtrSnapshot.docs
     .map((doc) => doc.data())
-    .filter((record) => record.archived !== true && record.status === 'verified')
+    .filter((record) =>
+      record.archived !== true &&
+      record.status === 'verified' &&
+      String(record.academicYear || '').trim() === currentAcademicYear
+    )
     .reduce((sum, record) => {
       const timeIn = record.timeIn?.toDate?.();
       const timeOut = record.timeOut?.toDate?.();
@@ -97,7 +125,31 @@ async function syncCompletionStage(db, studentId) {
     }, 0);
   const requiredHours = Number(profile.requiredHours || 400);
 
-  if (approvedHours < requiredHours || !completionVerified) {
+  const deploymentDefinitions = definitions.filter(
+    (definition) =>
+      !isOngoingDefinition(definition) &&
+      !isCompletionDefinition(definition)
+  );
+  const prerequisites = deploymentDefinitions.length === 0
+    ? definitions
+    : deploymentDefinitions;
+  const prerequisitesVerified = prerequisites.length > 0 &&
+    prerequisites.every(
+      (definition) => latestFor(definition)?.status === 'verified'
+    );
+
+  const placementStatus = String(
+    profile.placementStatus || 'Unassigned'
+  ).toLowerCase();
+  const placementConfirmed = ['confirm', 'deploy', 'ongoing', 'active']
+    .some((term) => placementStatus.includes(term));
+
+  if (
+    !prerequisitesVerified ||
+    !placementConfirmed ||
+    approvedHours < requiredHours ||
+    !completionVerified
+  ) {
     await profileDoc.ref.set({
       statusSyncPending: false,
       updatedAt: FieldValue.serverTimestamp(),
@@ -157,6 +209,157 @@ function publicPayload(id, data) {
   };
 }
 
+export async function createStaffEvaluation({ authorization, body }) {
+  ensureAdminApp();
+
+  const bearer = typeof authorization === 'string'
+    ? authorization.match(/^Bearer\s+(\S+)$/i)?.[1]
+    : null;
+
+  if (!bearer) {
+    return {
+      status: 401,
+      payload: { error: 'Staff sign-in is required.' },
+    };
+  }
+
+  let decoded;
+  try {
+    decoded = await getAuth().verifyIdToken(bearer, true);
+  } catch (_) {
+    return {
+      status: 401,
+      payload: { error: 'Your session is invalid or expired. Sign in again.' },
+    };
+  }
+
+  const db = getFirestore();
+  const staffSnapshot = await db.collection('users').doc(decoded.uid).get();
+  const staff = staffSnapshot.data() || {};
+
+  const isAdmin = staff.role === 'admin';
+  const isCoordinator =
+    staff.role === 'coordinator' &&
+    staff.approvalStatus === 'approved';
+
+  if (!staffSnapshot.exists ||
+      staff.active !== true ||
+      (!isAdmin && !isCoordinator)) {
+    return {
+      status: 403,
+      payload: { error: 'Only active, authorized internship staff can create evaluations.' },
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = parseBody(body);
+  } catch (_) {
+    return {
+      status: 400,
+      payload: { error: 'Invalid evaluation request.' },
+    };
+  }
+
+  const studentId = String(parsed.studentId || '').trim();
+  const companyName = String(parsed.companyName || '').trim();
+  const supervisorName = String(parsed.supervisorName || '').trim();
+  const supervisorEmail = String(parsed.supervisorEmail || '').trim().toLowerCase();
+  const validDays = Number(parsed.validDays ?? 14);
+
+  if (!studentId ||
+      !companyName ||
+      !supervisorName ||
+      !supervisorEmail.includes('@') ||
+      !Number.isInteger(validDays) ||
+      validDays < 1 ||
+      validDays > 60) {
+    return {
+      status: 400,
+      payload: { error: 'Complete all supervisor evaluation details.' },
+    };
+  }
+
+  const studentSnapshot = await db.collection('users').doc(studentId).get();
+  const student = studentSnapshot.data() || {};
+
+  if (!studentSnapshot.exists ||
+      student.role !== 'student' ||
+      student.active === false) {
+    return {
+      status: 404,
+      payload: { error: 'An active student intern was not found.' },
+    };
+  }
+
+  if (isCoordinator && student.coordinatorId !== decoded.uid) {
+    return {
+      status: 403,
+      payload: { error: 'This student is not assigned to your coordinator account.' },
+    };
+  }
+
+  const academicYear = String(student.academicYear || '').trim();
+  if (!academicYear) {
+    return {
+      status: 409,
+      payload: { error: 'Set the student academic year before creating an evaluation.' },
+    };
+  }
+
+  const profileSnapshot =
+    await db.collection('internship_profiles').doc(studentId).get();
+  const profile = profileSnapshot.data() || {};
+  const profileYear = String(profile.academicYear || '').trim();
+
+  if (profile.archived === true ||
+      (profileYear && profileYear !== academicYear)) {
+    return {
+      status: 409,
+      payload: { error: 'The student internship profile must be reviewed before creating an evaluation.' },
+    };
+  }
+
+  const token = randomBytes(24).toString('base64url');
+  const evaluationRef = db.collection('supervisor_evaluations').doc(token);
+  const statusRef = db.collection('evaluation_status').doc();
+
+  const batch = db.batch();
+
+  batch.set(evaluationRef, {
+    statusId: statusRef.id,
+    studentId,
+    studentName: String(student.displayName || student.name || '').trim(),
+    companyName,
+    supervisorName,
+    supervisorEmail,
+    coordinatorId: student.coordinatorId || null,
+    academicYear,
+    status: 'pending',
+    expiresAt: Timestamp.fromDate(
+      new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
+    ),
+    archived: false,
+    createdBy: decoded.uid,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // No secret link token or confidential supervisor information goes here.
+  batch.set(statusRef, {
+    studentId,
+    academicYear,
+    status: 'pending',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  return {
+    status: 201,
+    payload: { token },
+  };
+}
 export async function getPublicEvaluation({ token }) {
   ensureAdminApp();
   const safeToken = normalizeToken(token);
@@ -274,7 +477,50 @@ export async function submitPublicEvaluation({ body }) {
         };
       }
 
+      const studentId = String(data.studentId || '').trim();
+      if (!studentId || studentId.includes('/')) {
+        return { status: 400, payload: { error: 'Invalid student record.' } };
+      }
+
+      // Each evaluation has a separate student-readable status record.
+      // Older pending evaluations may not have a statusId yet.
+      const statusId = String(data.statusId || '').trim();
+      const statusCollection = db.collection('evaluation_status');
+      const statusRef = statusId
+        ? statusCollection.doc(statusId)
+        : statusCollection.doc();
+
+      if (statusId) {
+        // Complete all transaction reads before performing any writes.
+        const statusSnapshot = await transaction.get(statusRef);
+        const existingStatus = statusSnapshot.data();
+
+        if (
+          !statusSnapshot.exists ||
+          existingStatus.studentId !== studentId ||
+          existingStatus.academicYear !== String(data.academicYear || '').trim() ||
+          existingStatus.status !== 'pending'
+        ) {
+          return {
+            status: 409,
+            payload: { error: 'Evaluation status record is missing or inconsistent.' },
+          };
+        }
+      }
+
+      // Never put ratings, comments, supervisor email, or the private
+      // evaluation link token in the student-readable status record.
+      transaction.set(statusRef, {
+        studentId,
+        academicYear: String(data.academicYear || '').trim(),
+        status: 'submitted',
+        submittedAt: FieldValue.serverTimestamp(),
+        ...(!statusId
+          ? { createdAt: FieldValue.serverTimestamp() }
+          : {}),
+      }, { merge: true });
       transaction.update(ref, {
+        statusId: statusRef.id,
         ratings: normalizedRatings,
         comments,
         status: 'submitted',
@@ -286,6 +532,7 @@ export async function submitPublicEvaluation({ body }) {
       return {
         status: 200,
         studentId: String(data.studentId || ''),
+      evaluationAcademicYear: String(data.academicYear || '').trim(),
         payload: {
           ok: true,
           message: 'Evaluation submitted successfully. This form is now locked.',
@@ -294,7 +541,7 @@ export async function submitPublicEvaluation({ body }) {
     });
     if (result.status === 200 && result.studentId) {
       try {
-        await syncCompletionStage(db, result.studentId);
+        await syncCompletionStage(db, result.studentId, result.evaluationAcademicYear);
       } catch (syncError) {
         console.error('Unable to synchronize internship completion stage:', syncError);
       }

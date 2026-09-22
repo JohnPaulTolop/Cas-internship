@@ -19,3 +19,4 @@ config/*.json
 !config/example.json
 node_modules/
 .vercel/
+firestore-debug.log

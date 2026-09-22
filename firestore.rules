@@ -307,21 +307,44 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /evaluation_status/{statusId} {
+      // Students can read only their own non-confidential status records.
+      // The document ID is separate from the private evaluation link token.
+      allow read: if isStudent() &&
+        resource.data.studentId == request.auth.uid;
+
+      // Only the trusted backend creates student-visible status records.
+      allow create: if false;
+      // Only the trusted backend can change pending to submitted.
+      allow update, delete: if false;
+    }
+
     match /supervisor_evaluations/{token} {
       // Industry supervisor access is handled by the trusted /api/evaluation
       // application-server endpoint. Firestore itself is never public.
       allow read: if isAdmin() ||
-        (isCoordinator() && resource.data.coordinatorId == request.auth.uid) ||
-        (isStudent() && resource.data.studentId == request.auth.uid);
+        (isCoordinator() && resource.data.coordinatorId == request.auth.uid);
 
-      allow create: if isAdmin() || (
+      // Only the trusted backend creates confidential evaluation records.
+      allow create: if false;
+      // Admins may maintain archive/assignment metadata, but cannot edit
+      // submitted ratings, comments, or the evaluation status.
+      // Coordinators may only clear a submitted record's sync-pending flag.
+      allow update: if (
+        isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'archived', 'archivedAt', 'archivedBy', 'academicYear',
+          'coordinatorId', 'updatedAt', 'statusSyncPending'
+        ])
+      ) || (
         isCoordinator() &&
-        request.resource.data.coordinatorId == request.auth.uid &&
-        assignedStudent(request.resource.data.studentId)
-      );
-
-      allow update: if isAdmin() || (
-        isCoordinator() && resource.data.coordinatorId == request.auth.uid
+        resource.data.coordinatorId == request.auth.uid &&
+        resource.data.status == 'submitted' &&
+        resource.data.statusSyncPending == true &&
+        request.resource.data.statusSyncPending == false &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'statusSyncPending', 'updatedAt'
+        ])
       );
 
       allow delete: if isAdmin();
