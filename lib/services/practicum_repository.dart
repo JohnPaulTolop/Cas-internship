@@ -2152,6 +2152,9 @@ class PracticumRepository {
     final path =
         '$ownerId/$folder/${DateTime.now().microsecondsSinceEpoch}_$safeName';
     final bytes = await file.readAsBytes();
+    if (folder == 'requirements' && (bytes.isEmpty || bytes.length > 5 * 1024 * 1024)) {
+      throw StateError('Each requirement file must be at most 5 MB.');
+    }
     try {
       await Supabase.instance.client.storage
           .from(AppConfig.supabaseBucket)

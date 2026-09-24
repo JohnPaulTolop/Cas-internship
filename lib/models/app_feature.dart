@@ -95,7 +95,6 @@ class RoleAccess {
     AppFeature.dashboard,
     AppFeature.statusTracker,
     AppFeature.requirements,
-    AppFeature.repository,
     AppFeature.dtr,
     AppFeature.notifications,
     AppFeature.settings,

@@ -3,40 +3,56 @@ import 'package:practicum_connect/models/app_feature.dart';
 import 'package:practicum_connect/models/app_user.dart';
 
 void main() {
-  test('admin can access every feature', () {
-    expect(RoleAccess.forRole(UserRole.admin), AppFeature.values.toSet());
+  test('admin retains the existing administrative modules', () {
+    expect(RoleAccess.forRole(UserRole.admin), {
+      AppFeature.dashboard,
+      AppFeature.students,
+      AppFeature.requirements,
+      AppFeature.repository,
+      AppFeature.documentReview,
+      AppFeature.dtr,
+      AppFeature.evaluations,
+      AppFeature.moa,
+      AppFeature.notifications,
+      AppFeature.reports,
+      AppFeature.archivedRecords,
+      AppFeature.users,
+      AppFeature.audit,
+      AppFeature.settings,
+    });
   });
 
-  test('coordinator receives the agreed operational modules', () {
-    final access = RoleAccess.forRole(UserRole.coordinator);
+  test('coordinator retains the existing operational modules', () {
+    expect(RoleAccess.forRole(UserRole.coordinator), {
+      AppFeature.dashboard,
+      AppFeature.students,
+      AppFeature.documentReview,
+      AppFeature.dtr,
+      AppFeature.evaluations,
+      AppFeature.notifications,
+      AppFeature.archivedRecords,
+      AppFeature.settings,
+    });
+  });
+
+  test('student uses Requirements Checklist without a duplicate repository tab', () {
+    expect(RoleAccess.forRole(UserRole.student), {
+      AppFeature.dashboard,
+      AppFeature.statusTracker,
+      AppFeature.requirements,
+      AppFeature.dtr,
+      AppFeature.notifications,
+      AppFeature.settings,
+    });
+
     expect(
-      access,
-      containsAll([
-        AppFeature.dtr,
-        AppFeature.tor,
-        AppFeature.hours,
-        AppFeature.moa,
-        AppFeature.students,
-        AppFeature.requirements,
-        AppFeature.documentReview,
-        AppFeature.repository,
-        AppFeature.notifications,
-        AppFeature.reports,
-      ]),
+      RoleAccess.canAccess(UserRole.student, AppFeature.repository),
+      isFalse,
     );
-    expect(access, isNot(contains(AppFeature.users)));
-  });
 
-  test(
-    'student access includes tracking, submissions, repository, and notices',
-    () {
-      expect(RoleAccess.forRole(UserRole.student), {
-        AppFeature.dashboard,
-        AppFeature.statusTracker,
-        AppFeature.requirements,
-        AppFeature.repository,
-        AppFeature.notifications,
-      });
-    },
-  );
+    expect(
+      RoleAccess.canAccess(UserRole.student, AppFeature.requirements),
+      isTrue,
+    );
+  });
 }

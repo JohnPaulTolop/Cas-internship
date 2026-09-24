@@ -1,0 +1,293 @@
+--- a/lib/models/app_feature.dart
++++ b/lib/models/app_feature.dart
+@@ -95,7 +95,6 @@
+     AppFeature.dashboard,
+     AppFeature.statusTracker,
+     AppFeature.requirements,
+-    AppFeature.repository,
+     AppFeature.dtr,
+     AppFeature.notifications,
+     AppFeature.settings,
+--- a/lib/screens/document_workflow_screens.dart
++++ b/lib/screens/document_workflow_screens.dart
+@@ -576,6 +576,101 @@
+     extends State<StudentRequirementsChecklistScreen> {
+   String _query = '';
+   String _filter = 'All Requirements';
++  final Map<String, PlatformFile> _selectedFiles = {};
++  final Map<String, String> _uploadErrors = {};
++  bool _uploading = false;
++  String? _uploadingTitle;
++
++  bool _canSubmit(_RequirementChecklistItem item) =>
++      item.record == null ||
++      item.record!.status == ReviewStatus.needsRevision ||
++      item.record!.status == ReviewStatus.rejected;
++
++  Future<bool> _chooseFile(_RequirementChecklistItem item) async {
++    if (_uploading || !_canSubmit(item)) return false;
++    final file = await FilePicker.pickFile(
++      type: FileType.custom,
++      allowedExtensions: ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'],
++    );
++    if (file == null || !mounted) return false;
++    if (file.size == 0 || file.size > 5 * 1024 * 1024) {
++      ScaffoldMessenger.of(context).showSnackBar(
++        const SnackBar(content: Text('Each file must be non-empty and at most 5 MB.')),
++      );
++      return false;
++    }
++    setState(() {
++      _selectedFiles[item.definition.id] = file;
++      _uploadErrors.remove(item.definition.id);
++    });
++    return true;
++  }
++
++  Future<void> _submitSelected(
++    List<_RequirementChecklistItem> items, {
++    String? onlyDefinitionId,
++  }) async {
++    if (_uploading) return;
++    if (onlyDefinitionId != null && !_selectedFiles.containsKey(onlyDefinitionId)) {
++      final item = items.where((item) => item.definition.id == onlyDefinitionId).firstOrNull;
++      if (item == null || !await _chooseFile(item)) return;
++    }
++    final selected = items.where((item) =>
++      _selectedFiles.containsKey(item.definition.id) &&
++      (onlyDefinitionId == null || item.definition.id == onlyDefinitionId),
++    ).toList();
++    if (selected.isEmpty) return;
++
++    setState(() {
++      _uploading = true;
++      _uploadErrors.clear();
++    });
++    var successes = 0;
++    var failures = 0;
++    for (final item in selected) {
++      if (!mounted) break;
++      final id = item.definition.id;
++      final file = _selectedFiles[id]!;
++      setState(() => _uploadingTitle = item.definition.title);
++      try {
++        if (!_canSubmit(item)) {
++          throw StateError('This requirement has already been submitted.');
++        }
++        if (item.record == null) {
++          await widget.repository.submitRequirement(
++            user: widget.user,
++            title: item.definition.title,
++            definition: item.definition,
++            file: file,
++          );
++        } else {
++          await widget.repository.resubmitRequirement(
++            user: widget.user,
++            requirement: item.record!,
++            file: file,
++          );
++        }
++        successes++;
++        _selectedFiles.remove(id);
++      } catch (error) {
++        failures++;
++        // The repository can throw after saving a document (e.g. notification
++        // failure), so do not automatically retry a possibly saved upload.
++        _selectedFiles.remove(id);
++        _uploadErrors[id] = '$error — Refresh the checklist before retrying.';
++      }
++      if (mounted) setState(() {});
++    }
++    if (!mounted) return;
++    setState(() {
++      _uploading = false;
++      _uploadingTitle = null;
++    });
++    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
++      content: Text('$successes submitted; $failures need attention. '
++          'Review each requirement before trying again.'),
++    ));
++  }
+ 
+   @override
+   Widget build(BuildContext context) => WorkflowPage(
+@@ -760,6 +855,29 @@
+                     ),
+                   ),
+                   const SizedBox(height: 12),
++                  if (_selectedFiles.isNotEmpty || _uploading) ...[
++                    Card(
++                      child: Padding(
++                        padding: const EdgeInsets.all(12),
++                        child: Wrap(
++                          spacing: 12,
++                          runSpacing: 8,
++                          crossAxisAlignment: WrapCrossAlignment.center,
++                          children: [
++                            Text(_uploading
++                                ? 'Uploading: ${_uploadingTitle ?? 'preparing'}'
++                                : '${_selectedFiles.length} file(s) ready • 5 MB maximum each'),
++                            FilledButton.icon(
++                              onPressed: _uploading ? null : () => _submitSelected(items),
++                              icon: const Icon(Icons.cloud_upload_outlined),
++                              label: const Text('Submit All Selected Files'),
++                            ),
++                          ],
++                        ),
++                      ),
++                    ),
++                    const SizedBox(height: 12),
++                  ],
+                   if (visible.isEmpty)
+                     const EmptyWorkflowState(
+                       icon: Icons.fact_check_outlined,
+@@ -773,8 +891,15 @@
+                         padding: const EdgeInsets.only(bottom: 10),
+                         child: _RequirementChecklistTile(
+                           item: item,
+-                          user: widget.user,
+                           repository: widget.repository,
++                          selectedFile: _selectedFiles[item.definition.id],
++                          uploadError: _uploadErrors[item.definition.id],
++                          uploading: _uploading,
++                          onChooseFile: () => _chooseFile(item),
++                          onSubmit: () => _submitSelected(
++                            items,
++                            onlyDefinitionId: item.definition.id,
++                          ),
+                         ),
+                       ),
+                     ),
+@@ -867,13 +992,21 @@
+ class _RequirementChecklistTile extends StatelessWidget {
+   const _RequirementChecklistTile({
+     required this.item,
+-    required this.user,
+     required this.repository,
++    required this.selectedFile,
++    required this.uploadError,
++    required this.uploading,
++    required this.onChooseFile,
++    required this.onSubmit,
+   });
+ 
+   final _RequirementChecklistItem item;
+-  final AppUser user;
+   final PracticumRepository repository;
++  final PlatformFile? selectedFile;
++  final String? uploadError;
++  final bool uploading;
++  final VoidCallback onChooseFile;
++  final VoidCallback onSubmit;
+ 
+   @override
+   Widget build(BuildContext context) {
+@@ -968,6 +1101,28 @@
+                       ),
+                   ],
+                 ),
++                if (definition.instructions.isNotEmpty &&
++                    definition.instructions != definition.description) ...[
++                  const SizedBox(height: 7),
++                  Text('Instructions: ${definition.instructions}',
++                      style: const TextStyle(fontSize: 10.5, color: AppTheme.muted)),
++                ],
++                if (record?.remarks?.isNotEmpty == true) ...[
++                  const SizedBox(height: 7),
++                  Text('Coordinator feedback: ${record!.remarks}',
++                      style: const TextStyle(fontSize: 10.5, color: AppTheme.warning)),
++                ],
++                if (selectedFile != null) ...[
++                  const SizedBox(height: 7),
++                  Text('Ready to upload: ${selectedFile!.name} '
++                      '(${(selectedFile!.size / (1024 * 1024)).toStringAsFixed(2)} MB)',
++                      style: const TextStyle(fontSize: 10.5, color: AppTheme.blue)),
++                ],
++                if (uploadError != null) ...[
++                  const SizedBox(height: 7),
++                  Text(uploadError!,
++                      style: const TextStyle(fontSize: 10.5, color: AppTheme.warning)),
++                ],
+               ],
+             );
+ 
+@@ -996,26 +1151,26 @@
+                     icon: const Icon(Icons.visibility_outlined, size: 15),
+                     label: const Text('Sample'),
+                   ),
+-                FilledButton.icon(
+-                  onPressed: () => Navigator.of(context).push(
+-                    MaterialPageRoute<void>(
+-                      builder: (_) => Scaffold(
+-                        backgroundColor: AppTheme.background,
+-                        appBar: AppBar(title: const Text('Document Submission')),
+-                        body: Padding(
+-                          padding: const EdgeInsets.all(18),
+-                          child: DocumentSubmissionBinScreen(
+-                            user: user,
+-                            repository: repository,
+-                            initialDefinitionId: definition.id,
+-                          ),
+-                        ),
+-                      ),
++                if (record?.storagePath?.isNotEmpty == true)
++                  OutlinedButton.icon(
++                    onPressed: () => openStorageDocument(
++                      context, repository, record!.storagePath!,
+                     ),
+-                  ),
+-                  icon: const Icon(Icons.upload_file_outlined, size: 15),
+-                  label: Text(record == null ? 'Submit' : 'Open Submission'),
+-                ),
++                    icon: const Icon(Icons.description_outlined, size: 15),
++                    label: const Text('View Uploaded File'),
++                  ),
++                if (needsAttention) ...[
++                  OutlinedButton.icon(
++                    onPressed: uploading ? null : onChooseFile,
++                    icon: const Icon(Icons.attach_file_outlined, size: 15),
++                    label: Text(selectedFile == null ? 'Choose File' : 'Change File'),
++                  ),
++                  FilledButton.icon(
++                    onPressed: uploading ? null : onSubmit,
++                    icon: const Icon(Icons.upload_file_outlined, size: 15),
++                    label: Text(selectedFile == null ? 'Submit' : 'Submit Selected'),
++                  ),
++                ],
+               ],
+             );
+ 
+@@ -1546,7 +1701,7 @@
+             ),
+             const SizedBox(height: 5),
+             const Text(
+-              'PDF only • Max file size: 10 MB',
++              'PDF, Word, PNG or JPG • Max file size: 5 MB',
+               style: TextStyle(fontSize: 8.5, color: AppTheme.muted),
+             ),
+           ],
+--- a/lib/services/practicum_repository.dart
++++ b/lib/services/practicum_repository.dart
+@@ -2139,6 +2139,11 @@
+     if (!AppConfig.hasSupabaseConfig) {
+       throw StateError(AppConfig.missingSupabaseMessage);
+     }
++    // Requirements are limited to 5 MiB per file, regardless of upload screen.
++    if (folder == 'requirements' &&
++        (file.size == 0 || file.size > 5 * 1024 * 1024)) {
++      throw StateError('Each requirement file must be non-empty and at most 5 MB.');
++    }
+     final firebaseUser = FirebaseAuth.instance.currentUser;
+     if (firebaseUser == null) {
+       throw StateError('Sign in again before uploading a file.');
+@@ -2152,6 +2157,9 @@
+     final path =
+         '$ownerId/$folder/${DateTime.now().microsecondsSinceEpoch}_$safeName';
+     final bytes = await file.readAsBytes();
++    if (folder == 'requirements' && bytes.length > 5 * 1024 * 1024) {
++      throw StateError('Each requirement file must be at most 5 MB.');
++    }
+     try {
+       await Supabase.instance.client.storage
+           .from(AppConfig.supabaseBucket)
