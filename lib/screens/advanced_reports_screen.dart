@@ -32,6 +32,10 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
   DateTimeRange? _range;
   bool _exporting = false;
 
+  List<String> get _availableReportTypes => widget.user.role == UserRole.admin
+      ? _reportTypes
+      : _reportTypes.where((type) => type != 'Partner & MOA').toList();
+
   static const _reportTypes = <String>[
     'Student Summary',
     'Student Deployment',
@@ -44,280 +48,313 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppUser>>(
     stream: widget.repository.watchStudentsFor(widget.user),
-    builder: (context, studentSnapshot) =>
-        StreamBuilder<List<InternshipProfileRecord>>(
+    builder: (context, studentSnapshot) => StreamBuilder<List<InternshipProfileRecord>>(
       stream: widget.repository.watchInternshipProfilesFor(widget.user),
-      builder: (context, profileSnapshot) =>
-          StreamBuilder<List<RequirementRecord>>(
+      builder: (context, profileSnapshot) => StreamBuilder<List<RequirementRecord>>(
         stream: widget.repository.watchRequirements(widget.user),
-        builder: (context, requirementSnapshot) =>
-            StreamBuilder<List<DtrRecord>>(
+        builder: (context, requirementSnapshot) => StreamBuilder<List<DtrRecord>>(
           stream: widget.repository.watchDtr(widget.user),
-          builder: (context, dtrSnapshot) =>
-              StreamBuilder<List<SupervisorEvaluationRecord>>(
+          builder: (context, dtrSnapshot) => StreamBuilder<List<SupervisorEvaluationRecord>>(
             stream: widget.repository.watchEvaluationsFor(widget.user),
-            builder: (context, evaluationSnapshot) =>
-                StreamBuilder<List<MoaRecord>>(
-              stream: widget.repository.watchMoas(),
+            builder: (context, evaluationSnapshot) => StreamBuilder<List<MoaRecord>>(
+              stream: widget.user.role == UserRole.admin
+                  ? widget.repository.watchMoas()
+                  : Stream<List<MoaRecord>>.value(const <MoaRecord>[]),
               builder: (context, moaSnapshot) =>
                   StreamBuilder<List<PartnerInstitutionRecord>>(
-                stream: widget.repository.watchPartnerInstitutions(),
-                builder: (context, partnerSnapshot) {
-                  final error = studentSnapshot.error ??
-                      profileSnapshot.error ??
-                      requirementSnapshot.error ??
-                      dtrSnapshot.error ??
-                      evaluationSnapshot.error ??
-                      moaSnapshot.error ??
-                      partnerSnapshot.error;
-                  if (error != null) {
-                    return Center(child: Text('Unable to load reports: $error'));
-                  }
+                    stream: widget.user.role == UserRole.admin
+                        ? widget.repository.watchPartnerInstitutions()
+                        : Stream<List<PartnerInstitutionRecord>>.value(
+                            const <PartnerInstitutionRecord>[],
+                          ),
+                    builder: (context, partnerSnapshot) {
+                      final error =
+                          studentSnapshot.error ??
+                          profileSnapshot.error ??
+                          requirementSnapshot.error ??
+                          dtrSnapshot.error ??
+                          evaluationSnapshot.error ??
+                          moaSnapshot.error ??
+                          partnerSnapshot.error;
+                      if (error != null) {
+                        return Center(
+                          child: Text('Unable to load reports: $error'),
+                        );
+                      }
 
-                  final students = studentSnapshot.data ?? const <AppUser>[];
-                  final profiles = profileSnapshot.data ??
-                      const <InternshipProfileRecord>[];
-                  final requirements = requirementSnapshot.data ??
-                      const <RequirementRecord>[];
-                  final dtr = dtrSnapshot.data ?? const <DtrRecord>[];
-                  final evaluations = evaluationSnapshot.data ??
-                      const <SupervisorEvaluationRecord>[];
-                  final moas = moaSnapshot.data ?? const <MoaRecord>[];
-                  final partners = partnerSnapshot.data ??
-                      const <PartnerInstitutionRecord>[];
+                      final students =
+                          studentSnapshot.data ?? const <AppUser>[];
+                      final profiles =
+                          profileSnapshot.data ??
+                          const <InternshipProfileRecord>[];
+                      final requirements =
+                          requirementSnapshot.data ??
+                          const <RequirementRecord>[];
+                      final dtr = dtrSnapshot.data ?? const <DtrRecord>[];
+                      final evaluations =
+                          evaluationSnapshot.data ??
+                          const <SupervisorEvaluationRecord>[];
+                      final moas = moaSnapshot.data ?? const <MoaRecord>[];
+                      final partners =
+                          partnerSnapshot.data ??
+                          const <PartnerInstitutionRecord>[];
 
-                  final programs = <String>{
-                    'All Programs',
-                    ...students
-                        .map((student) => student.program)
-                        .whereType<String>()
-                        .where((value) => value.trim().isNotEmpty),
-                    ...moas.expand((record) => record.programs),
-                  }.toList()
-                    ..sort();
-                  final years = <String>{
-                    'All Academic Years',
-                    ...students
-                        .map((student) => student.academicYear)
-                        .whereType<String>()
-                        .where((value) => value.trim().isNotEmpty),
-                    ...requirements
-                        .map((record) => record.academicYear)
-                        .whereType<String>()
-                        .where((value) => value.trim().isNotEmpty),
-                  }.toList()
-                    ..sort();
+                      final programs = <String>{
+                        'All Programs',
+                        ...students
+                            .map((student) => student.program)
+                            .whereType<String>()
+                            .where((value) => value.trim().isNotEmpty),
+                        ...moas.expand((record) => record.programs),
+                      }.toList()..sort();
+                      final years = <String>{
+                        'All Academic Years',
+                        ...students
+                            .map((student) => student.academicYear)
+                            .whereType<String>()
+                            .where((value) => value.trim().isNotEmpty),
+                        ...requirements
+                            .map((record) => record.academicYear)
+                            .whereType<String>()
+                            .where((value) => value.trim().isNotEmpty),
+                      }.toList()..sort();
 
-                  final effectiveProgram = programs.contains(_program)
-                      ? _program
-                      : 'All Programs';
-                  final effectiveYear = years.contains(_academicYear)
-                      ? _academicYear
-                      : 'All Academic Years';
+                      final effectiveProgram = programs.contains(_program)
+                          ? _program
+                          : 'All Programs';
+                      final effectiveYear = years.contains(_academicYear)
+                          ? _academicYear
+                          : 'All Academic Years';
 
-                  final filteredStudents = students.where((student) {
-                    final programMatches = effectiveProgram == 'All Programs' ||
-                        student.program == effectiveProgram;
-                    final yearMatches =
-                        effectiveYear == 'All Academic Years' ||
+                      final filteredStudents = students.where((student) {
+                        final programMatches =
+                            effectiveProgram == 'All Programs' ||
+                            student.program == effectiveProgram;
+                        final yearMatches =
+                            effectiveYear == 'All Academic Years' ||
                             student.academicYear == effectiveYear;
-                    return programMatches && yearMatches;
-                  }).toList();
-                  final studentIds =
-                      filteredStudents.map((student) => student.uid).toSet();
-                  final studentMap = {
-                    for (final student in students) student.uid: student,
-                  };
-                  final profileMap = {
-                    for (final profile in profiles) profile.studentId: profile,
-                  };
+                        return programMatches && yearMatches;
+                      }).toList();
+                      final studentIds = filteredStudents
+                          .map((student) => student.uid)
+                          .toSet();
+                      final studentMap = {
+                        for (final student in students) student.uid: student,
+                      };
+                      final profileMap = {
+                        for (final profile in profiles)
+                          profile.studentId: profile,
+                      };
 
-                  final data = _buildReportData(
-                    reportType: _reportType,
-                    students: filteredStudents,
-                    studentMap: studentMap,
-                    profileMap: profileMap,
-                    requirements: requirements
-                        .where((record) => studentIds.contains(record.studentId))
-                        .where((record) => _inRange(record.submittedAt))
-                        .toList(),
-                    dtr: dtr
-                        .where((record) => studentIds.contains(record.studentId))
-                        .where((record) => _inRange(record.date))
-                        .toList(),
-                    evaluations: evaluations
-                        .where((record) => studentIds.contains(record.studentId))
-                        .where((record) => _inRange(record.createdAt))
-                        .toList(),
-                    moas: moas
-                        .where(
-                          (record) => effectiveProgram == 'All Programs' ||
+                      final data = _buildReportData(
+                        reportType: _reportType,
+                        students: filteredStudents,
+                        studentMap: studentMap,
+                        profileMap: profileMap,
+                        requirements: requirements
+                            .where(
+                              (record) => studentIds.contains(record.studentId),
+                            )
+                            .where((record) => _inRange(record.submittedAt))
+                            .toList(),
+                        dtr: dtr
+                            .where(
+                              (record) => studentIds.contains(record.studentId),
+                            )
+                            .where((record) => _inRange(record.date))
+                            .toList(),
+                        evaluations: evaluations
+                            .where(
+                              (record) => studentIds.contains(record.studentId),
+                            )
+                            .where((record) => _inRange(record.createdAt))
+                            .toList(),
+                        moas: moas
+                            .where(
+                              (record) =>
+                                  effectiveProgram == 'All Programs' ||
+                                  record.programs.isEmpty ||
+                                  record.programs.contains(effectiveProgram),
+                            )
+                            .where((record) => _inRange(record.startDate))
+                            .toList(),
+                        partners: partners.where((record) {
+                          return effectiveProgram == 'All Programs' ||
                               record.programs.isEmpty ||
-                              record.programs.contains(effectiveProgram),
-                        )
-                        .where((record) => _inRange(record.startDate))
-                        .toList(),
-                    partners: partners.where((record) {
-                      return effectiveProgram == 'All Programs' ||
-                          record.programs.isEmpty ||
-                          record.programs.contains(effectiveProgram);
-                    }).toList(),
-                  );
+                              record.programs.contains(effectiveProgram);
+                        }).toList(),
+                      );
 
-                  final statuses = <String>{
-                    'All Statuses',
-                    ...data.rows.map((row) => row.status).where(
-                          (value) => value.trim().isNotEmpty,
-                        ),
-                  }.toList()
-                    ..sort();
-                  final effectiveStatus = statuses.contains(_status)
-                      ? _status
-                      : 'All Statuses';
-                  final visibleRows = data.rows.where((row) {
-                    final statusMatches =
-                        effectiveStatus == 'All Statuses' ||
+                      final statuses = <String>{
+                        'All Statuses',
+                        ...data.rows
+                            .map((row) => row.status)
+                            .where((value) => value.trim().isNotEmpty),
+                      }.toList()..sort();
+                      final effectiveStatus = statuses.contains(_status)
+                          ? _status
+                          : 'All Statuses';
+                      final visibleRows = data.rows.where((row) {
+                        final statusMatches =
+                            effectiveStatus == 'All Statuses' ||
                             row.status == effectiveStatus;
-                    final queryMatches = _query.trim().isEmpty ||
-                        row.cells.join(' ').toLowerCase().contains(
-                              _query.trim().toLowerCase(),
-                            );
-                    return statusMatches && queryMatches;
-                  }).toList();
+                        final queryMatches =
+                            _query.trim().isEmpty ||
+                            row.cells
+                                .join(' ')
+                                .toLowerCase()
+                                .contains(_query.trim().toLowerCase());
+                        return statusMatches && queryMatches;
+                      }).toList();
 
-                  return WorkflowPage(
-                    title: 'Reports & Analytics',
-                    subtitle:
-                        'Generate filtered internship reports, review dashboard analytics, and export PDF, Excel, or CSV files.',
-                    eyebrow: 'CAS Monitoring  ›  Reports & Analytics',
-                    actions: [
-                      OutlinedButton.icon(
-                        onPressed: () => _archiveAcademicYear(context),
-                        icon: const Icon(Icons.archive_outlined, size: 17),
-                        label: const Text('Archive Academic Year'),
-                      ),
-                      PopupMenuButton<String>(
-                        enabled: !_exporting && visibleRows.isNotEmpty,
-                        onSelected: (format) => _export(
-                          context,
-                          format,
-                          data.headers,
-                          visibleRows,
-                        ),
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
-                          PopupMenuItem(
-                            value: 'excel',
-                            child: Text('Export Excel'),
+                      return WorkflowPage(
+                        title: 'Reports & Analytics',
+                        subtitle:
+                            'Generate filtered internship reports, review dashboard analytics, and export PDF, Excel, or CSV files.',
+                        eyebrow: 'CAS Monitoring  ›  Reports & Analytics',
+                        actions: [
+                          OutlinedButton.icon(
+                            onPressed: () => _archiveAcademicYear(context),
+                            icon: const Icon(Icons.archive_outlined, size: 17),
+                            label: const Text('Archive Academic Year'),
                           ),
-                          PopupMenuItem(value: 'csv', child: Text('Export CSV')),
-                        ],
-                        child: Container(
-                          height: 40,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: (!_exporting && visibleRows.isNotEmpty)
-                                ? AppTheme.blue
-                                : AppTheme.surfaceSoft,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: (!_exporting && visibleRows.isNotEmpty)
-                                  ? AppTheme.blue
-                                  : AppTheme.border,
+                          PopupMenuButton<String>(
+                            enabled: !_exporting && visibleRows.isNotEmpty,
+                            onSelected: (format) => _export(
+                              context,
+                              format,
+                              data.headers,
+                              visibleRows,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_exporting)
-                                const SizedBox.square(
-                                  dimension: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  Icons.download_outlined,
-                                  size: 17,
-                                  color: visibleRows.isNotEmpty
-                                      ? Colors.white
-                                      : AppTheme.muted,
-                                ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Export',
-                                style: TextStyle(
-                                  color: (!_exporting && visibleRows.isNotEmpty)
-                                      ? Colors.white
-                                      : AppTheme.muted,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'pdf',
+                                child: Text('Export PDF'),
+                              ),
+                              PopupMenuItem(
+                                value: 'excel',
+                                child: Text('Export Excel'),
+                              ),
+                              PopupMenuItem(
+                                value: 'csv',
+                                child: Text('Export CSV'),
                               ),
                             ],
-                          ),
-                        ),
-                      ),
-                    ],
-                    child: ListView(
-                      children: [
-                        _ReportFilters(
-                          reportType: _reportType,
-                          reportTypes: _reportTypes,
-                          program: effectiveProgram,
-                          programs: programs,
-                          academicYear: effectiveYear,
-                          academicYears: years,
-                          status: effectiveStatus,
-                          statuses: statuses,
-                          range: _range,
-                          onReportType: (value) => setState(() {
-                            _reportType = value;
-                            _status = 'All Statuses';
-                          }),
-                          onProgram: (value) =>
-                              setState(() => _program = value),
-                          onAcademicYear: (value) =>
-                              setState(() => _academicYear = value),
-                          onStatus: (value) => setState(() => _status = value),
-                          onQuery: (value) => setState(() => _query = value),
-                          onDateRange: () => _pickRange(context),
-                          onReset: () => setState(() {
-                            _program = 'All Programs';
-                            _academicYear = 'All Academic Years';
-                            _status = 'All Statuses';
-                            _query = '';
-                            _range = null;
-                          }),
-                        ),
-                        const SizedBox(height: 14),
-                        _ReportMetrics(data: data, visibleCount: visibleRows.length),
-                        const SizedBox(height: 14),
-                        SectionCard(
-                          title: _reportType,
-                          subtitle:
-                              '${visibleRows.length} matching record(s) • Filters are applied before export.',
-                          padding: EdgeInsets.zero,
-                          child: visibleRows.isEmpty
-                              ? const Padding(
-                                  padding: EdgeInsets.all(22),
-                                  child: EmptyWorkflowState(
-                                    icon: Icons.query_stats_outlined,
-                                    title: 'No records found',
-                                    message:
-                                        'Adjust the report type, date range, academic year, program, status, or search criteria.',
-                                  ),
-                                )
-                              : _ReportTable(
-                                  headers: data.headers,
-                                  rows: visibleRows,
+                            child: Container(
+                              height: 40,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                color: (!_exporting && visibleRows.isNotEmpty)
+                                    ? AppTheme.blue
+                                    : AppTheme.surfaceSoft,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: (!_exporting && visibleRows.isNotEmpty)
+                                      ? AppTheme.blue
+                                      : AppTheme.border,
                                 ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_exporting)
+                                    const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      Icons.download_outlined,
+                                      size: 17,
+                                      color: visibleRows.isNotEmpty
+                                          ? Colors.white
+                                          : AppTheme.muted,
+                                    ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Export',
+                                    style: TextStyle(
+                                      color:
+                                          (!_exporting &&
+                                              visibleRows.isNotEmpty)
+                                          ? Colors.white
+                                          : AppTheme.muted,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        child: ListView(
+                          children: [
+                            _ReportFilters(
+                              reportType: _reportType,
+                              reportTypes: _availableReportTypes,
+                              program: effectiveProgram,
+                              programs: programs,
+                              academicYear: effectiveYear,
+                              academicYears: years,
+                              status: effectiveStatus,
+                              statuses: statuses,
+                              range: _range,
+                              onReportType: (value) => setState(() {
+                                _reportType = value;
+                                _status = 'All Statuses';
+                              }),
+                              onProgram: (value) =>
+                                  setState(() => _program = value),
+                              onAcademicYear: (value) =>
+                                  setState(() => _academicYear = value),
+                              onStatus: (value) =>
+                                  setState(() => _status = value),
+                              onQuery: (value) =>
+                                  setState(() => _query = value),
+                              onDateRange: () => _pickRange(context),
+                              onReset: () => setState(() {
+                                _program = 'All Programs';
+                                _academicYear = 'All Academic Years';
+                                _status = 'All Statuses';
+                                _query = '';
+                                _range = null;
+                              }),
+                            ),
+                            const SizedBox(height: 14),
+                            _ReportMetrics(
+                              data: data,
+                              visibleCount: visibleRows.length,
+                            ),
+                            const SizedBox(height: 14),
+                            SectionCard(
+                              title: _reportType,
+                              subtitle:
+                                  '${visibleRows.length} matching record(s) • Filters are applied before export.',
+                              padding: EdgeInsets.zero,
+                              child: visibleRows.isEmpty
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(22),
+                                      child: EmptyWorkflowState(
+                                        icon: Icons.query_stats_outlined,
+                                        title: 'No records found',
+                                        message:
+                                            'Adjust the report type, date range, academic year, program, status, or search criteria.',
+                                      ),
+                                    )
+                                  : _ReportTable(
+                                      headers: data.headers,
+                                      rows: visibleRows,
+                                    ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
             ),
           ),
         ),
@@ -328,7 +365,11 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
   bool _inRange(DateTime date) {
     final range = _range;
     if (range == null) return true;
-    final start = DateTime(range.start.year, range.start.month, range.start.day);
+    final start = DateTime(
+      range.start.year,
+      range.start.month,
+      range.start.day,
+    );
     final end = DateTime(
       range.end.year,
       range.end.month,
@@ -346,11 +387,9 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      initialDateRange: _range ??
-          DateTimeRange(
-            start: DateTime(now.year, now.month, 1),
-            end: now,
-          ),
+      initialDateRange:
+          _range ??
+          DateTimeRange(start: DateTime(now.year, now.month, 1), end: now),
     );
     if (result != null && mounted) setState(() => _range = result);
   }
@@ -448,7 +487,9 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
               try {
                 final year = int.tryParse(controller.text.trim());
                 if (year == null || year < 2000 || year > 2100) {
-                  throw ArgumentError('Enter a valid academic-year starting year.');
+                  throw ArgumentError(
+                    'Enter a valid academic-year starting year.',
+                  );
                 }
                 await widget.repository.archiveAcademicYear(
                   actor: widget.user,
@@ -457,9 +498,9 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
               } catch (error) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$error')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$error')));
                 }
               }
             },
@@ -500,8 +541,8 @@ _ReportData _buildReportData({
         ],
         rows: students.map((student) {
           final profile = profileMap[student.uid];
-          final stage = profile?.stage.label ??
-              InternshipStage.pendingRequirements.label;
+          final stage =
+              profile?.stage.label ?? InternshipStage.pendingRequirements.label;
           return _ReportRowData(
             status: stage,
             cells: [
@@ -537,7 +578,9 @@ _ReportData _buildReportData({
                   record.studentName,
                   record.title,
                   record.category,
-                  record.program ?? studentMap[record.studentId]?.program ?? '—',
+                  record.program ??
+                      studentMap[record.studentId]?.program ??
+                      '—',
                   date.format(record.submittedAt),
                   record.status.label,
                 ],
@@ -607,7 +650,9 @@ _ReportData _buildReportData({
       );
 
     case 'Partner & MOA':
-      final partnerNames = {for (final partner in partners) partner.id: partner.name};
+      final partnerNames = {
+        for (final partner in partners) partner.id: partner.name,
+      };
       return _ReportData(
         headers: const [
           'Institution',
@@ -669,7 +714,8 @@ _ReportData _buildReportData({
           final rating = submittedEvaluations.isEmpty
               ? '—'
               : submittedEvaluations.last.averageRating.toStringAsFixed(2);
-          final stage = profileMap[student.uid]?.stage.label ??
+          final stage =
+              profileMap[student.uid]?.stage.label ??
               InternshipStage.pendingRequirements.label;
           return _ReportRowData(
             status: stage,
@@ -741,117 +787,117 @@ class _ReportFilters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 220,
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: reportType,
-                  decoration: const InputDecoration(labelText: 'Report Type'),
-                  items: reportTypes
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value, overflow: TextOverflow.ellipsis),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) onReportType(value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: academicYear,
-                  decoration: const InputDecoration(labelText: 'Academic Year'),
-                  items: academicYears
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value, overflow: TextOverflow.ellipsis),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) onAcademicYear(value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: program,
-                  decoration: const InputDecoration(labelText: 'Program'),
-                  items: programs
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value, overflow: TextOverflow.ellipsis),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) onProgram(value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 180,
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Status'),
-                  items: statuses
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value, overflow: TextOverflow.ellipsis),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) onStatus(value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search_rounded, size: 18),
-                    hintText: 'Search report records…',
-                  ),
-                  onChanged: onQuery,
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: onDateRange,
-                icon: const Icon(Icons.date_range_outlined, size: 17),
-                label: Text(
-                  range == null
-                      ? 'Any Date'
-                      : '${DateFormat.MMMd().format(range!.start)} – ${DateFormat.MMMd().format(range!.end)}',
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onReset,
-                icon: const Icon(Icons.restart_alt_rounded, size: 17),
-                label: const Text('Reset'),
-              ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: reportType,
+              decoration: const InputDecoration(labelText: 'Report Type'),
+              items: reportTypes
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(value, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) onReportType(value);
+              },
+            ),
           ),
-        ),
-      );
+          SizedBox(
+            width: 190,
+            child: DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: academicYear,
+              decoration: const InputDecoration(labelText: 'Academic Year'),
+              items: academicYears
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(value, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) onAcademicYear(value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 190,
+            child: DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: program,
+              decoration: const InputDecoration(labelText: 'Program'),
+              items: programs
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(value, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) onProgram(value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 180,
+            child: DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: status,
+              decoration: const InputDecoration(labelText: 'Status'),
+              items: statuses
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(value, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) onStatus(value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 260,
+            child: TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded, size: 18),
+                hintText: 'Search report records…',
+              ),
+              onChanged: onQuery,
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: onDateRange,
+            icon: const Icon(Icons.date_range_outlined, size: 17),
+            label: Text(
+              range == null
+                  ? 'Any Date'
+                  : '${DateFormat.MMMd().format(range!.start)} – ${DateFormat.MMMd().format(range!.end)}',
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onReset,
+            icon: const Icon(Icons.restart_alt_rounded, size: 17),
+            label: const Text('Reset'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ReportMetrics extends StatelessWidget {
@@ -898,38 +944,38 @@ class _ReportTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: headers
-              .map(
-                (header) => DataColumn(
-                  label: Text(
-                    header,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              )
-              .toList(),
-          rows: rows
-              .map(
-                (row) => DataRow(
-                  cells: row.cells
-                      .map(
-                        (cell) => DataCell(
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 240),
-                            child: Text(
-                              cell,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+    scrollDirection: Axis.horizontal,
+    child: DataTable(
+      columns: headers
+          .map(
+            (header) => DataColumn(
+              label: Text(
+                header,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          )
+          .toList(),
+      rows: rows
+          .map(
+            (row) => DataRow(
+              cells: row.cells
+                  .map(
+                    (cell) => DataCell(
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Text(
+                          cell,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      )
-                      .toList(),
-                ),
-              )
-              .toList(),
-        ),
-      );
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          )
+          .toList(),
+    ),
+  );
 }

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/app_feature.dart';
 import '../models/app_user.dart';
+import '../models/records.dart';
 import '../services/app_controller.dart';
+import '../services/practicum_repository.dart';
 import 'module_screens.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -16,6 +18,22 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   AppFeature _selected = AppFeature.dashboard;
+
+  Future<void> _openGlobalSearch() async {
+    final user = widget.controller.user!;
+
+    final feature = await showDialog<AppFeature>(
+      context: context,
+      builder: (_) => _GlobalSearchDialog(
+        user: user,
+        repository: widget.controller.repository,
+      ),
+    );
+
+    if (!mounted || feature == null) return;
+
+    setState(() => _selected = feature);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,10 +62,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: _TopBar(
               user: user,
               desktop: desktop,
-              onNotifications: RoleAccess.canAccess(
-                user.role,
-                AppFeature.notifications,
-              )
+              onSearch: _openGlobalSearch,
+              onNotifications:
+                  RoleAccess.canAccess(user.role, AppFeature.notifications)
                   ? () => setState(() => _selected = AppFeature.notifications)
                   : null,
               onLogout: widget.controller.signOut,
@@ -110,16 +127,280 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+class _GlobalSearchDialog extends StatefulWidget {
+  const _GlobalSearchDialog({required this.user, required this.repository});
+
+  final AppUser user;
+  final PracticumRepository repository;
+
+  @override
+  State<_GlobalSearchDialog> createState() => _GlobalSearchDialogState();
+}
+
+class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
+  late final Future<_GlobalSearchData> _data;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _data = _loadData();
+  }
+
+  Future<_GlobalSearchData> _loadData() async {
+    final requirements = await widget.repository
+        .watchRequirements(widget.user)
+        .first;
+
+    final students = widget.user.role.isStaff
+        ? await widget.repository.watchStudentsFor(widget.user).first
+        : const <AppUser>[];
+
+    final partners = widget.user.role == UserRole.admin
+        ? await widget.repository.watchPartnerInstitutions().first
+        : const <PartnerInstitutionRecord>[];
+
+    return _GlobalSearchData(
+      students: students,
+      requirements: requirements,
+      partners: partners,
+    );
+  }
+
+  List<_GlobalSearchResult> _buildResults(_GlobalSearchData data) {
+    final query = _query.trim().toLowerCase();
+    final results = <_GlobalSearchResult>[];
+
+    for (final feature in RoleAccess.forRole(widget.user.role)) {
+      final label = feature.labelForRole(widget.user.role);
+
+      if (query.isEmpty || label.toLowerCase().contains(query)) {
+        results.add(
+          _GlobalSearchResult(
+            title: label,
+            subtitle: 'Open module',
+            icon: feature.icon,
+            feature: feature,
+          ),
+        );
+      }
+    }
+
+    if (query.isEmpty) {
+      return results;
+    }
+
+    for (final student in data.students) {
+      final searchable =
+          '${student.displayName} '
+                  '${student.email} '
+                  '${student.studentNumber ?? ''} '
+                  '${student.program ?? ''} '
+                  '${student.yearLevel ?? ''}'
+              .toLowerCase();
+
+      if (searchable.contains(query)) {
+        results.add(
+          _GlobalSearchResult(
+            title: student.displayName,
+            subtitle:
+                '${student.studentNumber ?? 'No student number'} • '
+                '${student.program ?? 'Program not set'}',
+            icon: Icons.person_outline,
+            feature: AppFeature.students,
+          ),
+        );
+      }
+    }
+
+    for (final record in data.requirements) {
+      final searchable =
+          '${record.title} '
+                  '${record.studentName} '
+                  '${record.studentNumber ?? ''} '
+                  '${record.fileName ?? ''} '
+                  '${record.category} '
+                  '${record.program ?? ''} '
+                  '${record.institutionName ?? ''}'
+              .toLowerCase();
+
+      if (searchable.contains(query)) {
+        results.add(
+          _GlobalSearchResult(
+            title: record.title,
+            subtitle: widget.user.role == UserRole.student
+                ? '${record.category} • ${record.status.label}'
+                : '${record.studentName} • ${record.status.label}',
+            icon: Icons.description_outlined,
+            feature: widget.user.role == UserRole.student
+                ? AppFeature.requirements
+                : AppFeature.documentReview,
+          ),
+        );
+      }
+    }
+
+    for (final partner in data.partners) {
+      final searchable =
+          '${partner.name} '
+                  '${partner.address} '
+                  '${partner.industryField} '
+                  '${partner.institutionType} '
+                  '${partner.contactName} '
+                  '${partner.contactEmail} '
+                  '${partner.programs.join(' ')}'
+              .toLowerCase();
+
+      if (searchable.contains(query)) {
+        results.add(
+          _GlobalSearchResult(
+            title: partner.name,
+            subtitle: [
+              partner.industryField,
+              partner.contactName,
+            ].where((value) => value.isNotEmpty).join(' • '),
+            icon: Icons.business_outlined,
+            feature: AppFeature.moa,
+          ),
+        );
+      }
+    }
+
+    return results.take(50).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.search_rounded),
+          SizedBox(width: 10),
+          Text('Search Practicum Connect'),
+        ],
+      ),
+      content: SizedBox(
+        width: 680,
+        height: 500,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                hintText: switch (widget.user.role) {
+                  UserRole.student =>
+                    'Search requirements, documents, or modules',
+                  UserRole.coordinator =>
+                    'Search assigned interns, documents, or modules',
+                  UserRole.admin =>
+                    'Search students, documents, institutions, or modules',
+                },
+              ),
+              onChanged: (value) {
+                setState(() => _query = value);
+              },
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: FutureBuilder<_GlobalSearchData>(
+                future: _data,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Unable to search: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final results = _buildResults(snapshot.data!);
+
+                  if (results.isEmpty) {
+                    return const Center(
+                      child: Text('No matching results found.'),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: results.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final result = results[index];
+
+                      return ListTile(
+                        leading: Icon(result.icon),
+                        title: Text(result.title),
+                        subtitle: result.subtitle.isEmpty
+                            ? null
+                            : Text(result.subtitle),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () {
+                          Navigator.of(context).pop(result.feature);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _GlobalSearchData {
+  const _GlobalSearchData({
+    required this.students,
+    required this.requirements,
+    required this.partners,
+  });
+
+  final List<AppUser> students;
+  final List<RequirementRecord> requirements;
+  final List<PartnerInstitutionRecord> partners;
+}
+
+class _GlobalSearchResult {
+  const _GlobalSearchResult({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.feature,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final AppFeature feature;
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.user,
     required this.desktop,
+    required this.onSearch,
     required this.onNotifications,
     required this.onLogout,
   });
 
   final AppUser user;
   final bool desktop;
+  final VoidCallback onSearch;
   final VoidCallback? onNotifications;
   final VoidCallback onLogout;
 
@@ -144,10 +425,7 @@ class _TopBar extends StatelessWidget {
                   icon: const Icon(Icons.menu_rounded),
                 ),
               ),
-            if (!desktop) ...[
-              const SizedBox(width: 4),
-              const _CompactBrand(),
-            ],
+            if (!desktop) ...[const SizedBox(width: 4), const _CompactBrand()],
             if (desktop) const Spacer(),
             if (desktop)
               ConstrainedBox(
@@ -156,28 +434,33 @@ class _TopBar extends StatelessWidget {
                   width: 340,
                   height: 42,
                   child: TextField(
+                    readOnly: true,
+                    showCursor: false,
+                    onTap: onSearch,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                      hintText: 'Search students, documents, institutions',
-                      suffixIcon: Container(
-                        margin: const EdgeInsets.all(7),
-                        alignment: Alignment.center,
-                        width: 34,
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceSoft,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: const Text(
-                          '⌘K',
-                          style: TextStyle(fontSize: 9.5, color: AppTheme.muted),
-                        ),
+                      hintText: switch (user.role) {
+                        UserRole.student => 'Search requirements or documents',
+                        UserRole.coordinator =>
+                          'Search assigned interns or documents',
+                        UserRole.admin =>
+                          'Search students, documents, institutions',
+                      },
+                      suffixIcon: const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 14,
                       ),
                     ),
                   ),
                 ),
               ),
             const Spacer(),
+            if (!desktop)
+              IconButton(
+                tooltip: 'Search',
+                onPressed: onSearch,
+                icon: const Icon(Icons.search_rounded, size: 22),
+              ),
             IconButton(
               tooltip: 'Notifications',
               onPressed: onNotifications,
@@ -361,10 +644,7 @@ class _SideNavigation extends StatelessWidget {
                         'CAS Internship Management',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 9.5,
-                        ),
+                        style: TextStyle(color: AppTheme.muted, fontSize: 9.5),
                       ),
                     ],
                   ),
@@ -401,7 +681,9 @@ class _SideNavigation extends StatelessWidget {
                       constraints: const BoxConstraints(minHeight: 44),
                       padding: const EdgeInsets.symmetric(horizontal: 11),
                       decoration: BoxDecoration(
-                        color: active ? AppTheme.surfaceBlue : Colors.transparent,
+                        color: active
+                            ? AppTheme.surfaceBlue
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(11),
                         border: active
                             ? Border.all(color: const Color(0xFFDCE9FF))
@@ -432,7 +714,9 @@ class _SideNavigation extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: active ? AppTheme.deepBlue : AppTheme.text,
+                                color: active
+                                    ? AppTheme.deepBlue
+                                    : AppTheme.text,
                                 fontSize: 11.6,
                                 fontWeight: active
                                     ? FontWeight.w700
@@ -473,7 +757,10 @@ class _SideNavigation extends StatelessWidget {
                       children: [
                         Icon(Icons.help_outline_rounded, size: 18),
                         SizedBox(width: 10),
-                        Text('Help & Support', style: TextStyle(fontSize: 11.5)),
+                        Text(
+                          'Help & Support',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
                       ],
                     ),
                   ),

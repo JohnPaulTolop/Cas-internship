@@ -222,7 +222,10 @@ service cloud.firestore {
           resource.data.targetRole == currentProfile().role ||
           resource.data.targetRole == 'user:' + request.auth.uid
         ) &&
-        (resource.data.targetUserId == null || resource.data.targetUserId == request.auth.uid)
+        (
+          resource.data.targetUserId == null ||
+          resource.data.targetUserId == request.auth.uid
+        )
       );
 
       allow create: if isAdmin() || (
@@ -241,15 +244,26 @@ service cloud.firestore {
 
       allow update: if isAdmin() || (
         signedIn() &&
+        resource.data.active == true &&
         (
           resource.data.targetRole == 'all' ||
           resource.data.targetRole == currentProfile().role ||
           resource.data.targetRole == 'user:' + request.auth.uid
         ) &&
-        (resource.data.targetUserId == null || resource.data.targetUserId == request.auth.uid) &&
+        (
+          resource.data.targetUserId == null ||
+          resource.data.targetUserId == request.auth.uid
+        ) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'readBy', 'updatedAt'
-        ])
+        ]) &&
+        request.resource.data.readBy is list &&
+        resource.data.readBy is list &&
+        request.resource.data.readBy.hasAll(resource.data.readBy) &&
+        request.resource.data.readBy.hasOnly(
+          resource.data.readBy.concat([request.auth.uid])
+        ) &&
+        request.auth.uid in request.resource.data.readBy
       );
 
       allow delete: if isAdmin();

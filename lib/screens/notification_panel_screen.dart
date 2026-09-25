@@ -34,6 +34,12 @@ class _StudentNotificationPanelScreenState
   Widget build(BuildContext context) => StreamBuilder<List<NotificationRecord>>(
     stream: widget.repository.watchNotifications(widget.user),
     builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Center(
+          child: Text('Unable to load notifications: ${snapshot.error}'),
+        );
+      }
+
       final all = snapshot.data ?? const <NotificationRecord>[];
       final unread = all
           .where((notice) => !notice.isReadBy(widget.user.uid))
@@ -53,12 +59,14 @@ class _StudentNotificationPanelScreenState
           4 => notice.type == 'document_feedback',
           _ => true,
         };
-        final queryMatches = _query.isEmpty ||
+        final queryMatches =
+            _query.isEmpty ||
             '${notice.title} ${notice.message}'.toLowerCase().contains(_query);
         final typeMatches = _type == 'all' || notice.type == _type;
         return tabMatches && queryMatches && typeMatches;
       }).toList();
-      final selected = _selected != null &&
+      final selected =
+          _selected != null &&
               records.any((notice) => notice.id == _selected!.id)
           ? records.firstWhere((notice) => notice.id == _selected!.id)
           : records.firstOrNull;
@@ -132,26 +140,29 @@ class _StudentNotificationPanelScreenState
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: _type,
-                        decoration: const InputDecoration(labelText: 'All Types'),
-                        items: const {
-                          'all': 'All Types',
-                          'general': 'General',
-                          'document_feedback': 'Document Feedback',
-                          'deadline': 'Deadline',
-                          'status_update': 'Status Update',
-                          'document_submission': 'Document Submission',
-                          'dtr_submission': 'DTR Submission',
-                          'dtr_update': 'DTR Update',
-                          'assignment': 'Assignment',
-                          'evaluation': 'Evaluation',
-                        }.entries
-                            .map(
-                              (entry) => DropdownMenuItem(
-                                value: entry.key,
-                                child: Text(entry.value),
-                              ),
-                            )
-                            .toList(),
+                        decoration: const InputDecoration(
+                          labelText: 'All Types',
+                        ),
+                        items:
+                            const {
+                                  'all': 'All Types',
+                                  'general': 'General',
+                                  'document_feedback': 'Document Feedback',
+                                  'deadline': 'Deadline',
+                                  'status_update': 'Status Update',
+                                  'document_submission': 'Document Submission',
+                                  'dtr_submission': 'DTR Submission',
+                                  'dtr_update': 'DTR Update',
+                                  'assignment': 'Assignment',
+                                  'evaluation': 'Evaluation',
+                                }.entries
+                                .map(
+                                  (entry) => DropdownMenuItem(
+                                    value: entry.key,
+                                    child: Text(entry.value),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (value) =>
                             setState(() => _type = value ?? 'all'),
                       ),
@@ -161,9 +172,14 @@ class _StudentNotificationPanelScreenState
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: 'All Dates',
-                        decoration: const InputDecoration(labelText: 'All Dates'),
+                        decoration: const InputDecoration(
+                          labelText: 'All Dates',
+                        ),
                         items: const [
-                          DropdownMenuItem(value: 'All Dates', child: Text('All Dates')),
+                          DropdownMenuItem(
+                            value: 'All Dates',
+                            child: Text('All Dates'),
+                          ),
                         ],
                         onChanged: (_) {},
                       ),
@@ -194,7 +210,8 @@ class _StudentNotificationPanelScreenState
                       ? const EmptyWorkflowState(
                           icon: Icons.mark_email_unread_outlined,
                           title: 'Select a notification',
-                          message: 'Notification details and actions appear here.',
+                          message:
+                              'Notification details and actions appear here.',
                         )
                       : _NotificationDetails(
                           user: widget.user,
@@ -270,7 +287,10 @@ class _NotificationList extends StatelessWidget {
                       : unread
                       ? const Color(0xFFFBFDFF)
                       : Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -305,8 +325,9 @@ class _NotificationList extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 10.5,
-                                      fontWeight:
-                                          unread ? FontWeight.w800 : FontWeight.w600,
+                                      fontWeight: unread
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -340,7 +361,11 @@ class _NotificationList extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 5),
-                      const Icon(Icons.more_horiz, size: 16, color: AppTheme.muted),
+                      const Icon(
+                        Icons.more_horiz,
+                        size: 16,
+                        color: AppTheme.muted,
+                      ),
                     ],
                   ),
                 ),
@@ -478,10 +503,8 @@ class _NotificationDetails extends StatelessWidget {
           const SizedBox(height: 7),
         ],
         OutlinedButton.icon(
-          onPressed: () => repository.markNotificationRead(
-            user: user,
-            notification: notice,
-          ),
+          onPressed: () =>
+              repository.markNotificationRead(user: user, notification: notice),
           icon: const Icon(Icons.mark_email_read_outlined, size: 15),
           label: const Text('Mark as Read'),
         ),

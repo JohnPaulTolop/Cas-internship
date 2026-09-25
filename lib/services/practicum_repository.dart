@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -16,12 +17,11 @@ class PracticumRepository {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   // Students receive submission status only, never confidential evaluation data.
-  Stream<bool> watchStudentEvaluationSubmitted(String studentId) =>
-      _db
-          .collection('evaluation_status')
-          .doc(studentId)
-          .snapshots()
-          .map((snapshot) => snapshot.data()?['status'] == 'submitted');
+  Stream<bool> watchStudentEvaluationSubmitted(String studentId) => _db
+      .collection('evaluation_status')
+      .doc(studentId)
+      .snapshots()
+      .map((snapshot) => snapshot.data()?['status'] == 'submitted');
   // Reads only student-visible status documents, never supervisor evaluations.
   // Filter by academic year so older evaluations do not appear as current ones.
   Stream<List<String>> watchStudentEvaluationStatuses(
@@ -36,12 +36,14 @@ class PracticumRepository {
         .collection('evaluation_status')
         .where('studentId', isEqualTo: studentId)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .where((doc) => doc.data()['academicYear'] == academicYear)
-            .map((doc) => doc.data()['status'])
-            .where((status) => status == 'pending' || status == 'submitted')
-            .cast<String>()
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .where((doc) => doc.data()['academicYear'] == academicYear)
+              .map((doc) => doc.data()['status'])
+              .where((status) => status == 'pending' || status == 'submitted')
+              .cast<String>()
+              .toList(),
+        );
   }
 
   Stream<List<RequirementRecord>> watchRequirements(AppUser user) {
@@ -79,29 +81,93 @@ class PracticumRepository {
   }
 
   Stream<List<NotificationRecord>> watchNotifications(AppUser user) {
-    Query<Map<String, dynamic>> query = _db.collection('notifications');
-    if (user.role != UserRole.admin) {
-      query = query.where(
-        'targetRole',
-        whereIn: ['all', user.role.value, 'user:${user.uid}'],
-      );
+    if (user.role == UserRole.admin) {
+      return _db.collection('notifications').snapshots().map((snapshot) {
+        final records = snapshot.docs.map(NotificationRecord.fromDoc).toList();
+        records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return records;
+      });
     }
-    return query.snapshots().map((snapshot) {
-      var records = snapshot.docs.map(NotificationRecord.fromDoc).toList();
-      if (user.role != UserRole.admin) {
-        records = records
-            .where(
-              (record) =>
-                  record.active &&
-                  record.isDue &&
-                  (record.targetUserId == null ||
-                      record.targetUserId == user.uid),
-            )
-            .toList();
-      }
-      records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return records;
-    });
+
+    final allQuery = _db
+        .collection('notifications')
+        .where('active', isEqualTo: true)
+        .where('targetRole', isEqualTo: 'all')
+        .where('targetUserId', isNull: true);
+
+    final roleQuery = _db
+        .collection('notifications')
+        .where('active', isEqualTo: true)
+        .where('targetRole', isEqualTo: user.role.value)
+        .where('targetUserId', isNull: true);
+
+    final targetedQuery = _db
+        .collection('notifications')
+        .where('active', isEqualTo: true)
+        .where('targetRole', isEqualTo: 'user:${user.uid}')
+        .where('targetUserId', isEqualTo: user.uid);
+
+    late final StreamController<List<NotificationRecord>> controller;
+
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? allSubscription;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? roleSubscription;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+    targetedSubscription;
+
+    var allRecords = <String, NotificationRecord>{};
+    var roleRecords = <String, NotificationRecord>{};
+    var targetedRecords = <String, NotificationRecord>{};
+
+    void emitRecords() {
+      final merged = <String, NotificationRecord>{
+        ...allRecords,
+        ...roleRecords,
+        ...targetedRecords,
+      };
+
+      final records =
+          merged.values
+              .where((record) => record.active && record.isDue)
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      controller.add(records);
+    }
+
+    controller = StreamController<List<NotificationRecord>>(
+      onListen: () {
+        allSubscription = allQuery.snapshots().listen((snapshot) {
+          allRecords = {
+            for (final doc in snapshot.docs)
+              doc.id: NotificationRecord.fromDoc(doc),
+          };
+          emitRecords();
+        }, onError: controller.addError);
+
+        roleSubscription = roleQuery.snapshots().listen((snapshot) {
+          roleRecords = {
+            for (final doc in snapshot.docs)
+              doc.id: NotificationRecord.fromDoc(doc),
+          };
+          emitRecords();
+        }, onError: controller.addError);
+
+        targetedSubscription = targetedQuery.snapshots().listen((snapshot) {
+          targetedRecords = {
+            for (final doc in snapshot.docs)
+              doc.id: NotificationRecord.fromDoc(doc),
+          };
+          emitRecords();
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await allSubscription?.cancel();
+        await roleSubscription?.cancel();
+        await targetedSubscription?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   Stream<List<AppUser>> watchUsers({UserRole? role}) {
@@ -122,8 +188,9 @@ class PracticumRepository {
   }
 
   Stream<List<AppUser>> watchStudentsFor(AppUser actor) {
-    Query<Map<String, dynamic>> query =
-        _db.collection('users').where('role', isEqualTo: UserRole.student.value);
+    Query<Map<String, dynamic>> query = _db
+        .collection('users')
+        .where('role', isEqualTo: UserRole.student.value);
     if (actor.role == UserRole.coordinator) {
       query = query.where('coordinatorId', isEqualTo: actor.uid);
     } else if (actor.role == UserRole.student) {
@@ -196,7 +263,10 @@ class PracticumRepository {
       'updatedAt': FieldValue.serverTimestamp(),
       if (id == null) 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    await _log(actor, '${id == null ? 'Added' : 'Updated'} partner institution: ${name.trim()}');
+    await _log(
+      actor,
+      '${id == null ? 'Added' : 'Updated'} partner institution: ${name.trim()}',
+    );
     return reference.id;
   }
 
@@ -298,8 +368,7 @@ class PracticumRepository {
   }
 
   Stream<List<SupervisorEvaluationRecord>> watchEvaluationsFor(AppUser actor) {
-    if (actor.role != UserRole.admin &&
-        actor.role != UserRole.coordinator) {
+    if (actor.role != UserRole.admin && actor.role != UserRole.coordinator) {
       return Stream<List<SupervisorEvaluationRecord>>.error(
         StateError(
           'Confidential evaluations are available only to authorized staff.',
@@ -307,8 +376,9 @@ class PracticumRepository {
       );
     }
 
-    Query<Map<String, dynamic>> query =
-        _db.collection('supervisor_evaluations');
+    Query<Map<String, dynamic>> query = _db.collection(
+      'supervisor_evaluations',
+    );
     if (actor.role == UserRole.coordinator) {
       query = query.where('coordinatorId', isEqualTo: actor.uid);
     } else if (actor.role == UserRole.student) {
@@ -334,10 +404,12 @@ class PracticumRepository {
         return records;
       });
 
-  Future<PublicEvaluationAccessRecord> loadPublicEvaluation(String token) async {
-    final uri = Uri.parse(AppConfig.evaluationApiUrl).replace(
-      queryParameters: {'token': token},
-    );
+  Future<PublicEvaluationAccessRecord> loadPublicEvaluation(
+    String token,
+  ) async {
+    final uri = Uri.parse(
+      AppConfig.evaluationApiUrl,
+    ).replace(queryParameters: {'token': token});
     final response = await http.get(
       uri,
       headers: const {'Accept': 'application/json'},
@@ -407,14 +479,18 @@ class PracticumRepository {
     required AppUser actor,
   }) async {
     if (!actor.role.isStaff) {
-      throw StateError('Archived records are available only to authorized internship staff.');
+      throw StateError(
+        'Archived records are available only to authorized internship staff.',
+      );
     }
 
-    Query<Map<String, dynamic>> requirementQuery =
-        _db.collection('requirements');
+    Query<Map<String, dynamic>> requirementQuery = _db.collection(
+      'requirements',
+    );
     Query<Map<String, dynamic>> dtrQuery = _db.collection('dtr_entries');
-    Query<Map<String, dynamic>> evaluationQuery =
-        _db.collection('supervisor_evaluations');
+    Query<Map<String, dynamic>> evaluationQuery = _db.collection(
+      'supervisor_evaluations',
+    );
 
     // Program Coordinators may retrieve only records belonging to interns who
     // were assigned to them. CAS College Coordinator / SIP Admin can retrieve
@@ -440,8 +516,7 @@ class PracticumRepository {
     final requirements = snapshots[0].docs
         .map(RequirementRecord.fromDoc)
         .where(
-          (record) =>
-              record.archived && record.academicYear == academicYear,
+          (record) => record.archived && record.academicYear == academicYear,
         )
         .toList();
     final dtr = snapshots[1].docs
@@ -653,7 +728,8 @@ class PracticumRepository {
     }
 
     final parsed = Uri.tryParse(normalizedPath);
-    if (parsed != null && (parsed.scheme == 'http' || parsed.scheme == 'https')) {
+    if (parsed != null &&
+        (parsed.scheme == 'http' || parsed.scheme == 'https')) {
       return normalizedPath;
     }
 
@@ -837,7 +913,9 @@ class PracticumRepository {
     }
 
     if (actor.role != UserRole.student || studentId != actor.uid) {
-      throw StateError('Only the Student Intern can create a Daily Time Record.');
+      throw StateError(
+        'Only the Student Intern can create a Daily Time Record.',
+      );
     }
     final now = DateTime.now();
     final submittedDay = DateTime(date.year, date.month, date.day);
@@ -860,7 +938,11 @@ class PracticumRepository {
         .where('studentId', isEqualTo: student.uid)
         .get();
     final duplicate = existing.docs.map(DtrRecord.fromDoc).any((record) {
-      final recordDay = DateTime(record.date.year, record.date.month, record.date.day);
+      final recordDay = DateTime(
+        record.date.year,
+        record.date.month,
+        record.date.day,
+      );
       return !record.archived && recordDay == submittedDay;
     });
     if (duplicate) {
@@ -910,7 +992,9 @@ class PracticumRepository {
     required int breakMinutes,
   }) async {
     if (student.role != UserRole.student || record.studentId != student.uid) {
-      throw StateError('Student interns may correct only their own DTR entries.');
+      throw StateError(
+        'Student interns may correct only their own DTR entries.',
+      );
     }
     final currentAcademicYear = student.academicYear?.trim() ?? '';
     if (currentAcademicYear.isEmpty) {
@@ -925,7 +1009,9 @@ class PracticumRepository {
     }
     if (record.status != ReviewStatus.needsRevision &&
         record.status != ReviewStatus.rejected) {
-      throw StateError('Only DTR entries returned for correction can be edited.');
+      throw StateError(
+        'Only DTR entries returned for correction can be edited.',
+      );
     }
     if (!timeOut.isAfter(timeIn)) {
       throw ArgumentError('Time out must be later than time in.');
@@ -953,7 +1039,8 @@ class PracticumRepository {
         targetUserId: student.coordinatorId!,
         targetRole: UserRole.coordinator.value,
         title: 'Corrected DTR resubmitted',
-        message: '${student.displayName} corrected and resubmitted a DTR entry.',
+        message:
+            '${student.displayName} corrected and resubmitted a DTR entry.',
         type: 'dtr_submission',
         relatedId: record.id,
       );
@@ -1046,8 +1133,9 @@ class PracticumRepository {
       'type': type,
       'relatedId': relatedId,
       'priority': priority,
-      'scheduledFor':
-          scheduledFor == null ? null : Timestamp.fromDate(scheduledFor),
+      'scheduledFor': scheduledFor == null
+          ? null
+          : Timestamp.fromDate(scheduledFor),
       'linkUrl': linkUrl?.trim().isEmpty == true ? null : linkUrl?.trim(),
       'readBy': <String>[],
       'createdBy': actor.uid,
@@ -1081,15 +1169,20 @@ class PracticumRepository {
     required InternshipProfileRecord profile,
   }) async {
     if (!actor.role.isStaff) {
-      throw StateError('Student interns cannot update internship placement records.');
+      throw StateError(
+        'Student interns cannot update internship placement records.',
+      );
     }
     await _assertCanManageStudent(actor, student.uid);
     if (profile.requiredHours <= 0) {
       throw ArgumentError('Required hours must be greater than zero.');
     }
 
-    final coordinatorId = student.coordinatorId ??
-        (actor.role == UserRole.coordinator ? actor.uid : profile.coordinatorId);
+    final coordinatorId =
+        student.coordinatorId ??
+        (actor.role == UserRole.coordinator
+            ? actor.uid
+            : profile.coordinatorId);
 
     final batch = _db.batch();
     batch.set(_db.collection('internship_profiles').doc(student.uid), {
@@ -1209,8 +1302,9 @@ class PracticumRepository {
       'title': title.trim(),
       'message': message.trim(),
       'priority': priority,
-      'scheduledFor':
-          scheduledFor == null ? null : Timestamp.fromDate(scheduledFor),
+      'scheduledFor': scheduledFor == null
+          ? null
+          : Timestamp.fromDate(scheduledFor),
       'linkUrl': linkUrl?.trim().isEmpty == true ? null : linkUrl?.trim(),
       'updatedBy': actor.uid,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -1427,14 +1521,10 @@ class PracticumRepository {
       'coordinatorName': coordinator?.displayName,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    batch.set(
-      _db.collection('internship_profiles').doc(student.uid),
-      {
-        'coordinatorId': coordinator?.uid,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    batch.set(_db.collection('internship_profiles').doc(student.uid), {
+      'coordinatorId': coordinator?.uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     await batch.commit();
 
     // Keep existing records aligned with the newly assigned coordinator so
@@ -1457,7 +1547,8 @@ class PracticumRepository {
         targetUserId: coordinator.uid,
         targetRole: UserRole.coordinator.value,
         title: 'New intern assigned',
-        message: '${student.displayName} has been assigned to your internship group.',
+        message:
+            '${student.displayName} has been assigned to your internship group.',
         type: 'assignment',
         relatedId: student.uid,
       );
@@ -1479,7 +1570,9 @@ class PracticumRepository {
     required bool approve,
   }) async {
     if (actor.role != UserRole.admin) {
-      throw StateError('Only the CAS College Coordinator / SIP Admin can review coordinator requests.');
+      throw StateError(
+        'Only the CAS College Coordinator / SIP Admin can review coordinator requests.',
+      );
     }
     if (target.role != UserRole.coordinator ||
         target.approvalStatus != 'pending') {
@@ -1488,11 +1581,15 @@ class PracticumRepository {
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null || currentUser.uid != actor.uid) {
-      throw StateError('Your CAS College Coordinator / SIP Admin session has expired. Sign in again.');
+      throw StateError(
+        'Your CAS College Coordinator / SIP Admin session has expired. Sign in again.',
+      );
     }
     final token = await currentUser.getIdToken(true);
     if (token == null || token.isEmpty) {
-      throw StateError('Unable to refresh the CAS College Coordinator / SIP Admin security token.');
+      throw StateError(
+        'Unable to refresh the CAS College Coordinator / SIP Admin security token.',
+      );
     }
 
     final endpoint = Uri.parse(AppConfig.coordinatorApprovalApiUrl);
@@ -1546,7 +1643,9 @@ class PracticumRepository {
     required bool active,
   }) async {
     if (actor.role != UserRole.admin) {
-      throw StateError('Only the CAS College Coordinator / SIP Admin can change account status.');
+      throw StateError(
+        'Only the CAS College Coordinator / SIP Admin can change account status.',
+      );
     }
     if (actor.uid == target.uid && !active) {
       throw StateError('You cannot deactivate your own account.');
@@ -1570,7 +1669,9 @@ class PracticumRepository {
     int validDays = 14,
   }) async {
     if (!actor.role.isStaff) {
-      throw StateError('Student interns cannot create supervisor evaluation links.');
+      throw StateError(
+        'Student interns cannot create supervisor evaluation links.',
+      );
     }
     await _assertCanManageStudent(actor, student.uid);
     if (student.role != UserRole.student ||
@@ -1588,7 +1689,9 @@ class PracticumRepository {
     }
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null || currentUser.uid != actor.uid) {
-      throw StateError('Sign in with your staff account to create an evaluation.');
+      throw StateError(
+        'Sign in with your staff account to create an evaluation.',
+      );
     }
 
     final idToken = await currentUser.getIdToken(true);
@@ -1864,10 +1967,7 @@ class PracticumRepository {
     );
   }
 
-  Future<void> _assertCanManageStudent(
-    AppUser actor,
-    String studentId,
-  ) async {
+  Future<void> _assertCanManageStudent(AppUser actor, String studentId) async {
     if (actor.role == UserRole.admin) {
       return;
     }
@@ -1925,7 +2025,9 @@ class PracticumRepository {
       return;
     }
 
-    final profileReference = _db.collection('internship_profiles').doc(studentId);
+    final profileReference = _db
+        .collection('internship_profiles')
+        .doc(studentId);
     final profileSnapshot = await profileReference.get();
     final profileData = profileSnapshot.data() ?? <String, dynamic>{};
 
@@ -1939,19 +2041,22 @@ class PracticumRepository {
       return;
     }
 
-    final currentAcademicYear = (
-      userData['academicYear'] as String? ??
-      profileData['academicYear'] as String? ??
-      ''
-    ).trim();
+    final currentAcademicYear =
+        (userData['academicYear'] as String? ??
+                profileData['academicYear'] as String? ??
+                '')
+            .trim();
 
     final program = userData['program'] as String?;
-    final definitionsSnapshot =
-        await _db.collection('requirement_definitions').get();
+    final definitionsSnapshot = await _db
+        .collection('requirement_definitions')
+        .get();
     final definitions = definitionsSnapshot.docs
         .map(RequirementDefinition.fromDoc)
-        .where((definition) =>
-            definition.active && definition.appliesToProgram(program))
+        .where(
+          (definition) =>
+              definition.active && definition.appliesToProgram(program),
+        )
         .toList();
 
     final requirementSnapshot = await _db
@@ -1969,21 +2074,23 @@ class PracticumRepository {
         .toList();
 
     RequirementRecord? recordFor(RequirementDefinition definition) {
-      final candidates = activeRequirements
-          .where(
-            (record) =>
-                record.definitionId == definition.id ||
-                (record.definitionId == null &&
-                    record.title.trim().toLowerCase() ==
-                        definition.title.trim().toLowerCase()),
-          )
-          .toList()
-        ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+      final candidates =
+          activeRequirements
+              .where(
+                (record) =>
+                    record.definitionId == definition.id ||
+                    (record.definitionId == null &&
+                        record.title.trim().toLowerCase() ==
+                            definition.title.trim().toLowerCase()),
+              )
+              .toList()
+            ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
       return candidates.isEmpty ? null : candidates.first;
     }
 
-    final deploymentDefinitions =
-        definitions.where((definition) => definition.blocksDeployment).toList();
+    final deploymentDefinitions = definitions
+        .where((definition) => definition.blocksDeployment)
+        .toList();
     final prerequisites = deploymentDefinitions.isEmpty
         ? definitions
         : deploymentDefinitions;
@@ -2050,7 +2157,8 @@ class PracticumRepository {
               .where('studentId', isEqualTo: studentId)
               .get();
 
-          evaluationSubmitted = currentAcademicYear.isNotEmpty &&
+          evaluationSubmitted =
+              currentAcademicYear.isNotEmpty &&
               statusSnapshot.docs.any(
                 (doc) =>
                     doc.data()['academicYear'] == currentAcademicYear &&
@@ -2071,7 +2179,8 @@ class PracticumRepository {
 
           final evaluationSnapshot = await evaluationQuery.get();
 
-          evaluationSubmitted = currentAcademicYear.isNotEmpty &&
+          evaluationSubmitted =
+              currentAcademicYear.isNotEmpty &&
               evaluationSnapshot.docs.any(
                 (doc) =>
                     doc.data()['archived'] != true &&
@@ -2152,7 +2261,8 @@ class PracticumRepository {
     final path =
         '$ownerId/$folder/${DateTime.now().microsecondsSinceEpoch}_$safeName';
     final bytes = await file.readAsBytes();
-    if (folder == 'requirements' && (bytes.isEmpty || bytes.length > 5 * 1024 * 1024)) {
+    if (folder == 'requirements' &&
+        (bytes.isEmpty || bytes.length > 5 * 1024 * 1024)) {
       throw StateError('Each requirement file must be at most 5 MB.');
     }
     try {
