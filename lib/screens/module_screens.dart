@@ -67,19 +67,16 @@ class ModuleRouter extends StatelessWidget {
       ),
       AppFeature.repository =>
         user.role == UserRole.student
-            ? DocumentSubmissionBinScreen(
-                user: user,
-                repository: repository,
-              )
-            : DocumentRepositoryScreen(
-                user: user,
-                repository: repository,
-              ),
+            ? DocumentSubmissionBinScreen(user: user, repository: repository)
+            : DocumentRepositoryScreen(user: user, repository: repository),
       AppFeature.dtr => DtrScreen(user: user, repository: repository),
       AppFeature.notifications =>
         user.role == UserRole.admin
             ? NotificationsScreen(user: user, repository: repository)
-            : StudentNotificationPanelScreen(user: user, repository: repository),
+            : StudentNotificationPanelScreen(
+                user: user,
+                repository: repository,
+              ),
       AppFeature.reports => AdvancedReportsScreen(
         user: user,
         repository: repository,
@@ -178,19 +175,19 @@ class OverviewScreen extends StatelessWidget {
                 'Verified',
                 '$verified',
                 Icons.verified_outlined,
-                const Color(0xFF27AE60),
+                AppTheme.success,
               ),
               _StatData(
                 'Pending review',
                 '$pending',
                 Icons.pending_actions_outlined,
-                const Color(0xFFF39C12),
+                AppTheme.warning,
               ),
               _StatData(
                 'Accessible modules',
                 '${RoleAccess.forRole(user.role).length}',
                 Icons.apps_outlined,
-                const Color(0xFF8E44AD),
+                AppTheme.purple,
               ),
             ],
           );
@@ -796,19 +793,19 @@ class DtrScreen extends StatelessWidget {
                       'Weekly Hours',
                       weekly.toStringAsFixed(1),
                       Icons.view_week_outlined,
-                      const Color(0xFF2584D8),
+                      AppTheme.blue,
                     ),
                     _StatData(
                       'Monthly Hours',
                       monthly.toStringAsFixed(1),
                       Icons.calendar_month_outlined,
-                      const Color(0xFF8E44AD),
+                      AppTheme.purple,
                     ),
                     _StatData(
                       'Total Approved Hours',
                       total.toStringAsFixed(1),
                       Icons.timelapse_outlined,
-                      const Color(0xFF27AE60),
+                      AppTheme.success,
                     ),
                   ],
                 ),
@@ -852,18 +849,24 @@ class DtrScreen extends StatelessWidget {
                                   user.role == UserRole.student
                                       ? IconButton(
                                           tooltip:
-                                              item.status == ReviewStatus.needsRevision ||
-                                                      item.status == ReviewStatus.rejected
-                                                  ? 'Correct and resubmit'
-                                                  : 'Awaiting coordinator review',
+                                              item.status ==
+                                                      ReviewStatus
+                                                          .needsRevision ||
+                                                  item.status ==
+                                                      ReviewStatus.rejected
+                                              ? 'Correct and resubmit'
+                                              : 'Awaiting coordinator review',
                                           onPressed:
-                                              item.status == ReviewStatus.needsRevision ||
-                                                      item.status == ReviewStatus.rejected
-                                                  ? () => _showAddDialog(
-                                                        context,
-                                                        record: item,
-                                                      )
-                                                  : null,
+                                              item.status ==
+                                                      ReviewStatus
+                                                          .needsRevision ||
+                                                  item.status ==
+                                                      ReviewStatus.rejected
+                                              ? () => _showAddDialog(
+                                                  context,
+                                                  record: item,
+                                                )
+                                              : null,
                                           icon: const Icon(Icons.edit_outlined),
                                         )
                                       : IconButton(
@@ -890,10 +893,7 @@ class DtrScreen extends StatelessWidget {
     ],
   );
 
-  Future<void> _showAddDialog(
-    BuildContext context, {
-    DtrRecord? record,
-  }) async {
+  Future<void> _showAddDialog(BuildContext context, {DtrRecord? record}) async {
     if (user.role != UserRole.student) return;
 
     final breakMinutes = TextEditingController(
@@ -910,7 +910,11 @@ class DtrScreen extends StatelessWidget {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(record == null ? 'New Daily Time Record' : 'Correct Daily Time Record'),
+          title: Text(
+            record == null
+                ? 'New Daily Time Record'
+                : 'Correct Daily Time Record',
+          ),
           content: SizedBox(
             width: 480,
             child: Column(
@@ -1043,7 +1047,9 @@ class DtrScreen extends StatelessWidget {
                 }
               },
               icon: const Icon(Icons.send_outlined),
-              label: Text(record == null ? 'Submit DTR' : 'Resubmit correction'),
+              label: Text(
+                record == null ? 'Submit DTR' : 'Resubmit correction',
+              ),
             ),
           ],
         ),
@@ -1151,7 +1157,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       }).toList();
       final active = all.where((item) => item.active && item.isDue).length;
       final scheduled = all
-          .where((item) => item.active && item.scheduledFor != null && !item.isDue)
+          .where(
+            (item) => item.active && item.scheduledFor != null && !item.isDue,
+          )
           .length;
 
       return WorkflowPage(
@@ -1243,7 +1251,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Wrap(
                                         spacing: 8,
@@ -1258,12 +1267,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                             ),
                                           ),
                                           Chip(
-                                            visualDensity: VisualDensity.compact,
+                                            visualDensity:
+                                                VisualDensity.compact,
                                             label: Text(state),
                                           ),
                                           Chip(
-                                            visualDensity: VisualDensity.compact,
-                                            label: Text(item.priority.toUpperCase()),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            label: Text(
+                                              item.priority.toUpperCase(),
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -1294,13 +1307,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   tooltip: 'Notification actions',
                                   onSelected: (value) async {
                                     if (value == 'edit') {
-                                      await _showEditor(context, existing: item);
-                                    } else if (value == 'toggle') {
-                                      await widget.repository.setNotificationActive(
-                                        actor: widget.user,
-                                        notification: item,
-                                        active: !item.active,
+                                      await _showEditor(
+                                        context,
+                                        existing: item,
                                       );
+                                    } else if (value == 'toggle') {
+                                      await widget.repository
+                                          .setNotificationActive(
+                                            actor: widget.user,
+                                            notification: item,
+                                            active: !item.active,
+                                          );
                                     } else if (value == 'delete') {
                                       await _confirmDelete(context, item);
                                     }
@@ -1378,7 +1395,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
                           initialValue: target,
-                          decoration: const InputDecoration(labelText: 'Audience'),
+                          decoration: const InputDecoration(
+                            labelText: 'Audience',
+                          ),
                           items: const [
                             DropdownMenuItem(
                               value: 'student',
@@ -1395,8 +1414,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ],
                           onChanged: existing == null
                               ? (value) => setDialogState(
-                                    () => target = value ?? 'student',
-                                  )
+                                  () => target = value ?? 'student',
+                                )
                               : null,
                         ),
                       ),
@@ -1405,7 +1424,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
                           initialValue: priority,
-                          decoration: const InputDecoration(labelText: 'Priority'),
+                          decoration: const InputDecoration(
+                            labelText: 'Priority',
+                          ),
                           items: const [
                             DropdownMenuItem(
                               value: 'normal',
@@ -1469,9 +1490,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           label: Text(
                             scheduledFor == null
                                 ? 'Send immediately'
-                                : DateFormat.yMMMd()
-                                    .add_jm()
-                                    .format(scheduledFor!),
+                                : DateFormat.yMMMd().add_jm().format(
+                                    scheduledFor!,
+                                  ),
                           ),
                         ),
                       ),
@@ -1532,9 +1553,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       } catch (error) {
                         setDialogState(() => saving = false);
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('$error')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('$error')));
                         }
                       }
                     },
@@ -1696,24 +1717,24 @@ class _StatCard extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                data.value,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.navy,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data.value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.navy,
+                  ),
                 ),
-              ),
-              Text(
-                data.label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
-              ),
-            ],
-          ),
+                Text(
+                  data.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1728,20 +1749,11 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, icon) = switch (status) {
-      ReviewStatus.verified => (
-        const Color(0xFF27AE60),
-        Icons.check_circle_outline,
-      ),
-      ReviewStatus.needsRevision => (
-        const Color(0xFFE74C3C),
-        Icons.edit_note_outlined,
-      ),
-      ReviewStatus.rejected => (const Color(0xFFC0392B), Icons.cancel_outlined),
-      ReviewStatus.underReview => (
-        const Color(0xFF6C63FF),
-        Icons.rate_review_outlined,
-      ),
-      ReviewStatus.pending => (const Color(0xFFF39C12), Icons.pending_outlined),
+      ReviewStatus.verified => (AppTheme.success, Icons.check_circle_outline),
+      ReviewStatus.needsRevision => (AppTheme.danger, Icons.edit_note_outlined),
+      ReviewStatus.rejected => (AppTheme.danger, Icons.cancel_outlined),
+      ReviewStatus.underReview => (AppTheme.purple, Icons.rate_review_outlined),
+      ReviewStatus.pending => (AppTheme.warning, Icons.pending_outlined),
     };
     return Chip(
       avatar: Icon(icon, size: 17, color: color),
@@ -1770,7 +1782,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 58, color: Colors.black38),
+            Icon(icon, size: 58, color: AppTheme.subtle),
             const SizedBox(height: 16),
             Text(
               title,
@@ -1794,15 +1806,16 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final raw = '$error';
-    final permissionDenied = raw.contains('permission-denied') ||
+    final permissionDenied =
+        raw.contains('permission-denied') ||
         raw.toLowerCase().contains('insufficient permissions');
     return _EmptyState(
       icon: Icons.error_outline,
       title: 'Unable to load this module',
       message: permissionDenied
           ? 'Firestore denied access to this module. Deploy the updated '
-              'firestore.rules, then sign out and sign back in so the latest '
-              'coordinator permissions are used.'
+                'firestore.rules, then sign out and sign back in so the latest '
+                'coordinator permissions are used.'
           : raw,
     );
   }

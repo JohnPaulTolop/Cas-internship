@@ -38,7 +38,7 @@ class WorkflowPage extends StatelessWidget {
                   Text(
                     eyebrow!,
                     style: const TextStyle(
-                      color: AppTheme.blue,
+                      color: AppTheme.muted,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       letterSpacing: .15,
@@ -51,21 +51,21 @@ class WorkflowPage extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: headerConstraints.maxWidth < 520 ? 20 : 23,
+                    fontSize: headerConstraints.maxWidth < 520 ? 21 : 24,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.navy,
                     letterSpacing: -.35,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
                 Text(
                   subtitle,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppTheme.muted,
-                    fontSize: 12.5,
-                    height: 1.35,
+                    fontSize: 13,
+                    height: 1.4,
                   ),
                 ),
               ],
@@ -82,11 +82,7 @@ class WorkflowPage extends StatelessWidget {
                 const SizedBox(height: 14),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: actions,
-                  ),
+                  child: Wrap(spacing: 10, runSpacing: 10, children: actions),
                 ),
               ],
             );
@@ -117,7 +113,7 @@ class WorkflowPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           buildHeader(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           Expanded(child: child),
         ],
       );
@@ -138,7 +134,7 @@ class SectionCard extends StatelessWidget {
     this.title,
     this.subtitle,
     this.trailing,
-    this.padding = const EdgeInsets.all(18),
+    this.padding = const EdgeInsets.all(20),
   });
 
   final String? title;
@@ -170,7 +166,7 @@ class SectionCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: AppTheme.text,
                           fontWeight: FontWeight.w800,
-                          fontSize: 13.5,
+                          fontSize: 14,
                         ),
                       ),
                       if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
@@ -181,8 +177,8 @@ class SectionCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppTheme.muted,
-                            fontSize: 11.5,
-                            height: 1.25,
+                            fontSize: 12,
+                            height: 1.35,
                           ),
                         ),
                       ],
@@ -212,7 +208,8 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalized = label.toLowerCase();
-    final color = normalized.contains('verif') ||
+    final color =
+        normalized.contains('verif') ||
             normalized.contains('approv') ||
             normalized == 'active' ||
             normalized.contains('complete') ||
@@ -273,15 +270,15 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: .10),
+              color: color.withValues(alpha: .08),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 21),
@@ -381,7 +378,7 @@ class WorkspaceTabs extends StatelessWidget {
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: active ? Colors.white : Colors.transparent,
+                color: active ? AppTheme.surfaceBlue : Colors.transparent,
                 borderRadius: BorderRadius.circular(9),
                 border: active ? Border.all(color: AppTheme.border) : null,
               ),
@@ -398,9 +395,12 @@ class WorkspaceTabs extends StatelessWidget {
                   if (count != null) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: active ? AppTheme.sky : const Color(0xFFE9EEF5),
+                        color: active ? AppTheme.sky : AppTheme.border,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -492,9 +492,9 @@ class EmptyWorkflowState extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(

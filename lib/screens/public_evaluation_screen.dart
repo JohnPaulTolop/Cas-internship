@@ -50,13 +50,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FBFF), Color(0xFFEEF5FF), Color(0xFFF7F9FC)],
-        ),
-      ),
+      color: AppTheme.background,
       child: SafeArea(
         child: FutureBuilder<PublicEvaluationAccessRecord>(
           future: _evaluationFuture,
@@ -166,7 +160,9 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   FilledButton.icon(
-                                    onPressed: _verifying ? null : _verifyAccess,
+                                    onPressed: _verifying
+                                        ? null
+                                        : _verifyAccess,
                                     icon: _verifying
                                         ? const SizedBox.square(
                                             dimension: 18,
@@ -174,7 +170,9 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                                               strokeWidth: 2,
                                             ),
                                           )
-                                        : const Icon(Icons.verified_user_outlined),
+                                        : const Icon(
+                                            Icons.verified_user_outlined,
+                                          ),
                                     label: const Text('Verify Access'),
                                   ),
                                 ],
@@ -184,57 +182,57 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                               const SizedBox(height: 10),
                               Text(
                                 _error!,
-                                style: const TextStyle(color: Colors.red),
+                                style: const TextStyle(color: AppTheme.danger),
                               ),
                             ],
                           ] else ...[
-                          ..._ratings.keys.map(
-                            (key) => _RatingField(
-                              label: _label(key),
-                              value: _ratings[key]!,
-                              onChanged: (value) =>
-                                  setState(() => _ratings[key] = value),
+                            ..._ratings.keys.map(
+                              (key) => _RatingField(
+                                label: _label(key),
+                                value: _ratings[key]!,
+                                onChanged: (value) =>
+                                    setState(() => _ratings[key] = value),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _comments,
-                            maxLines: 5,
-                            maxLength: 3000,
-                            decoration: const InputDecoration(
-                              labelText: 'Comments and recommendations',
-                              alignLabelWithHint: true,
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _comments,
+                              maxLines: 5,
+                              maxLength: 3000,
+                              decoration: const InputDecoration(
+                                labelText: 'Comments and recommendations',
+                                alignLabelWithHint: true,
+                              ),
                             ),
-                          ),
-                          if (_error != null) ...[
+                            if (_error != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                _error!,
+                                style: const TextStyle(color: AppTheme.danger),
+                              ),
+                            ],
+                            const SizedBox(height: 18),
+                            FilledButton.icon(
+                              onPressed: _submitting ? null : _submit,
+                              icon: _submitting
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send_outlined),
+                              label: const Text('Submit final evaluation'),
+                            ),
                             const SizedBox(height: 8),
-                            Text(
-                              _error!,
-                              style: const TextStyle(color: Colors.red),
+                            const Text(
+                              'This link can be submitted only once.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: AppTheme.muted,
+                              ),
                             ),
-                          ],
-                          const SizedBox(height: 18),
-                          FilledButton.icon(
-                            onPressed: _submitting ? null : _submit,
-                            icon: _submitting
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.send_outlined),
-                            label: const Text('Submit final evaluation'),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'This link can be submitted only once.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: AppTheme.muted,
-                            ),
-                          ),
                           ],
                         ],
                       ),
@@ -306,7 +304,9 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       if (mounted) {
         setState(() {
           _submitting = false;
-          _evaluationFuture = widget.repository.loadPublicEvaluation(widget.token);
+          _evaluationFuture = widget.repository.loadPublicEvaluation(
+            widget.token,
+          );
         });
       }
     } catch (error) {
@@ -348,7 +348,7 @@ class _RatingField extends StatelessWidget {
               onPressed: () => onChanged(index + 1),
               icon: Icon(
                 index < value ? Icons.star : Icons.star_border,
-                color: const Color(0xFFF5A623),
+                color: AppTheme.warning,
               ),
             ),
           ),

@@ -58,7 +58,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final content = Scaffold(
           backgroundColor: AppTheme.background,
           appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(66),
+            preferredSize: const Size.fromHeight(72),
             child: _TopBar(
               user: user,
               desktop: desktop,
@@ -82,13 +82,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           body: LayoutBuilder(
             builder: (context, bodyConstraints) {
               final roomy = bodyConstraints.maxWidth >= 900;
-              final horizontalPadding = roomy ? 24.0 : 14.0;
+              final horizontalPadding = roomy ? 28.0 : 16.0;
               return Padding(
                 padding: EdgeInsets.fromLTRB(
                   horizontalPadding,
-                  roomy ? 22 : 14,
+                  roomy ? 24 : 16,
                   horizontalPadding,
-                  roomy ? 24 : 14,
+                  roomy ? 28 : 18,
                 ),
                 child: Align(
                   alignment: Alignment.topCenter,
@@ -116,7 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: 228, child: navigation),
+              SizedBox(width: 248, child: navigation),
               const VerticalDivider(width: 1, thickness: 1),
               Expanded(child: content),
             ],
@@ -410,8 +410,8 @@ class _TopBar extends StatelessWidget {
     child: SafeArea(
       bottom: false,
       child: Container(
-        height: 66,
-        padding: EdgeInsets.symmetric(horizontal: desktop ? 24 : 10),
+        height: 72,
+        padding: EdgeInsets.symmetric(horizontal: desktop ? 28 : 12),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTheme.border)),
         ),
@@ -429,9 +429,9 @@ class _TopBar extends StatelessWidget {
             if (desktop) const Spacer(),
             if (desktop)
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
+                constraints: const BoxConstraints(maxWidth: 420),
                 child: SizedBox(
-                  width: 340,
+                  width: 390,
                   height: 42,
                   child: TextField(
                     readOnly: true,
@@ -564,12 +564,13 @@ class _CompactBrand extends StatelessWidget {
     children: [
       DecoratedBox(
         decoration: BoxDecoration(
-          color: AppTheme.blue,
-          borderRadius: BorderRadius.all(Radius.circular(9)),
+          color: AppTheme.surfaceBlue,
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+          border: Border.fromBorderSide(BorderSide(color: AppTheme.border)),
         ),
         child: Padding(
-          padding: EdgeInsets.all(6),
-          child: Icon(Icons.hub_outlined, color: Colors.white, size: 17),
+          padding: EdgeInsets.all(7),
+          child: Icon(Icons.hub_outlined, color: AppTheme.blue, size: 18),
         ),
       ),
       SizedBox(width: 8),
@@ -608,19 +609,22 @@ class _SideNavigation extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Padding(
-            padding: EdgeInsets.fromLTRB(18, 20, 14, 18),
+            padding: EdgeInsets.fromLTRB(18, 22, 16, 20),
             child: Row(
               children: [
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: AppTheme.blue,
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                    color: AppTheme.surfaceBlue,
+                    borderRadius: BorderRadius.all(Radius.circular(11)),
+                    border: Border.fromBorderSide(
+                      BorderSide(color: AppTheme.border),
+                    ),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.all(8),
+                    padding: EdgeInsets.all(9),
                     child: Icon(
                       Icons.hub_outlined,
-                      color: Colors.white,
+                      color: AppTheme.blue,
                       size: 20,
                     ),
                   ),
@@ -667,26 +671,26 @@ class _SideNavigation extends StatelessWidget {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(9, 2, 9, 10),
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
               children: features.map((feature) {
                 final active = selected == feature;
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(12),
                     onTap: () => onSelected(feature),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 170),
                       curve: Curves.easeOut,
-                      constraints: const BoxConstraints(minHeight: 44),
+                      constraints: const BoxConstraints(minHeight: 46),
                       padding: const EdgeInsets.symmetric(horizontal: 11),
                       decoration: BoxDecoration(
                         color: active
                             ? AppTheme.surfaceBlue
                             : Colors.transparent,
-                        borderRadius: BorderRadius.circular(11),
+                        borderRadius: BorderRadius.circular(12),
                         border: active
-                            ? Border.all(color: const Color(0xFFDCE9FF))
+                            ? Border.all(color: AppTheme.border)
                             : Border.all(color: Colors.transparent),
                       ),
                       child: Row(

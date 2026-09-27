@@ -24,116 +24,116 @@ class EvaluationManagementScreen extends StatefulWidget {
       _EvaluationManagementScreenState();
 }
 
-class _EvaluationManagementScreenState extends State<EvaluationManagementScreen> {
+class _EvaluationManagementScreenState
+    extends State<EvaluationManagementScreen> {
   final Set<String> _syncing = <String>{};
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppUser>>(
     stream: widget.repository.watchStudentsFor(widget.user),
-    builder: (context, studentSnapshot) =>
-        StreamBuilder<List<SupervisorEvaluationRecord>>(
-          stream: widget.repository.watchEvaluationsFor(widget.user),
-          builder: (context, evaluationSnapshot) {
-            final error = studentSnapshot.error ?? evaluationSnapshot.error;
-            if (error != null) {
-              return Center(child: Text('Unable to load evaluations: $error'));
-            }
-            final students = studentSnapshot.data ?? const <AppUser>[];
-            final evaluations =
-                evaluationSnapshot.data ?? const <SupervisorEvaluationRecord>[];
+    builder: (context, studentSnapshot) => StreamBuilder<List<SupervisorEvaluationRecord>>(
+      stream: widget.repository.watchEvaluationsFor(widget.user),
+      builder: (context, evaluationSnapshot) {
+        final error = studentSnapshot.error ?? evaluationSnapshot.error;
+        if (error != null) {
+          return Center(child: Text('Unable to load evaluations: $error'));
+        }
+        final students = studentSnapshot.data ?? const <AppUser>[];
+        final evaluations =
+            evaluationSnapshot.data ?? const <SupervisorEvaluationRecord>[];
 
-            for (final record in evaluations) {
-              if (record.submitted && !_syncing.contains(record.id)) {
-                _syncing.add(record.id);
-                WidgetsBinding.instance.addPostFrameCallback((_) async {
-                  try {
-                    await widget.repository.syncInternshipStatus(
-                      actor: widget.user,
-                      studentId: record.studentId,
-                    );
-                  } catch (_) {
-                    // The evaluation remains visible even when a status sync
-                    // cannot run yet; a later staff visit retries it.
-                  }
-                });
+        for (final record in evaluations) {
+          if (record.submitted && !_syncing.contains(record.id)) {
+            _syncing.add(record.id);
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              try {
+                await widget.repository.syncInternshipStatus(
+                  actor: widget.user,
+                  studentId: record.studentId,
+                );
+              } catch (_) {
+                // The evaluation remains visible even when a status sync
+                // cannot run yet; a later staff visit retries it.
               }
-            }
+            });
+          }
+        }
 
-            final submitted = evaluations.where((item) => item.submitted).length;
-            final expired = evaluations.where((item) => item.expired).length;
-            final pending = evaluations.length - submitted - expired;
+        final submitted = evaluations.where((item) => item.submitted).length;
+        final expired = evaluations.where((item) => item.expired).length;
+        final pending = evaluations.length - submitted - expired;
 
-            return WorkflowPage(
-              title: 'Supervisor Evaluations',
-              subtitle:
-                  'Issue secure one-time evaluation links and monitor industry supervisor submissions.',
-              eyebrow: 'Internship Monitoring  ›  Evaluations',
-              actions: [
-                FilledButton.icon(
-                  onPressed: students.isEmpty
-                      ? null
-                      : () => _createEvaluation(context, students),
-                  icon: const Icon(Icons.add_link_rounded),
-                  label: const Text('New Evaluation Link'),
-                ),
-              ],
-              child: ListView(
+        return WorkflowPage(
+          title: 'Supervisor Evaluations',
+          subtitle:
+              'Issue secure one-time evaluation links and monitor industry supervisor submissions.',
+          eyebrow: 'Internship Monitoring  ›  Evaluations',
+          actions: [
+            FilledButton.icon(
+              onPressed: students.isEmpty
+                  ? null
+                  : () => _createEvaluation(context, students),
+              icon: const Icon(Icons.add_link_rounded),
+              label: const Text('New Evaluation Link'),
+            ),
+          ],
+          child: ListView(
+            children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
                 children: [
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      StatCard(
-                        label: 'Evaluation Links',
-                        value: '${evaluations.length}',
-                        icon: Icons.link_rounded,
-                      ),
-                      StatCard(
-                        label: 'Pending',
-                        value: '$pending',
-                        icon: Icons.pending_actions_outlined,
-                      ),
-                      StatCard(
-                        label: 'Submitted',
-                        value: '$submitted',
-                        icon: Icons.task_alt_rounded,
-                      ),
-                      StatCard(
-                        label: 'Expired',
-                        value: '$expired',
-                        icon: Icons.timer_off_outlined,
-                      ),
-                    ],
+                  StatCard(
+                    label: 'Evaluation Links',
+                    value: '${evaluations.length}',
+                    icon: Icons.link_rounded,
                   ),
-                  const SizedBox(height: 16),
-                  SectionCard(
-                    title: 'Evaluation Records',
-                    subtitle:
-                        'Links are valid once, expire automatically, and lock after successful submission.',
-                    child: evaluations.isEmpty
-                        ? const EmptyWorkflowState(
-                            icon: Icons.assignment_outlined,
-                            title: 'No evaluation links yet',
-                            message:
-                                'Create an evaluation link for an assigned student intern when the industry supervisor is ready to evaluate.',
-                          )
-                        : Column(
-                            children: evaluations
-                                .map(
-                                  (record) => _EvaluationTile(
-                                    record: record,
-                                    onCopy: () => _copyLink(context, record),
-                                    onEmail: () => _emailLink(context, record),
-                                  ),
-                                )
-                                .toList(),
-                          ),
+                  StatCard(
+                    label: 'Pending',
+                    value: '$pending',
+                    icon: Icons.pending_actions_outlined,
+                  ),
+                  StatCard(
+                    label: 'Submitted',
+                    value: '$submitted',
+                    icon: Icons.task_alt_rounded,
+                  ),
+                  StatCard(
+                    label: 'Expired',
+                    value: '$expired',
+                    icon: Icons.timer_off_outlined,
                   ),
                 ],
               ),
-            );
-          },
-        ),
+              const SizedBox(height: 16),
+              SectionCard(
+                title: 'Evaluation Records',
+                subtitle:
+                    'Links are valid once, expire automatically, and lock after successful submission.',
+                child: evaluations.isEmpty
+                    ? const EmptyWorkflowState(
+                        icon: Icons.assignment_outlined,
+                        title: 'No evaluation links yet',
+                        message:
+                            'Create an evaluation link for an assigned student intern when the industry supervisor is ready to evaluate.',
+                      )
+                    : Column(
+                        children: evaluations
+                            .map(
+                              (record) => _EvaluationTile(
+                                record: record,
+                                onCopy: () => _copyLink(context, record),
+                                onEmail: () => _emailLink(context, record),
+                              ),
+                            )
+                            .toList(),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
   );
 
   Future<void> _createEvaluation(
@@ -161,7 +161,9 @@ class _EvaluationManagementScreenState extends State<EvaluationManagementScreen>
                   DropdownButtonFormField<AppUser>(
                     isExpanded: true,
                     initialValue: selected,
-                    decoration: const InputDecoration(labelText: 'Student intern'),
+                    decoration: const InputDecoration(
+                      labelText: 'Student intern',
+                    ),
                     items: students
                         .map(
                           (student) => DropdownMenuItem(
@@ -254,9 +256,9 @@ class _EvaluationManagementScreenState extends State<EvaluationManagementScreen>
                       } catch (error) {
                         setDialogState(() => saving = false);
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('$error')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('$error')));
                         }
                       }
                     },
@@ -284,9 +286,9 @@ class _EvaluationManagementScreenState extends State<EvaluationManagementScreen>
   ) async {
     await Clipboard.setData(ClipboardData(text: _evaluationLink(record.id)));
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Evaluation link copied.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Evaluation link copied.')));
     }
   }
 

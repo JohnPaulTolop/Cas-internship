@@ -188,7 +188,10 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                         final wide = constraints.maxWidth >= 920;
                         final main = Column(
                           children: [
-                            _InternshipDetails(profile: profile, coordinatorName: student.coordinatorName),
+                            _InternshipDetails(
+                              profile: profile,
+                              coordinatorName: student.coordinatorName,
+                            ),
                             const SizedBox(height: 14),
                             _ProgressCard(
                               completedHours: hours,
@@ -340,9 +343,9 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                   }
                 } catch (error) {
                   if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(content: Text('$error')),
-                    );
+                    ScaffoldMessenger.of(
+                      dialogContext,
+                    ).showSnackBar(SnackBar(content: Text('$error')));
                   }
                 }
               },
@@ -397,14 +400,16 @@ class StudentInternshipProfileScreen extends StatelessWidget {
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Program Coordinator assignment removed.')),
+          const SnackBar(
+            content: Text('Program Coordinator assignment removed.'),
+          ),
         );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
@@ -454,7 +459,8 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'System internship stage',
-                        helperText: 'Updated automatically from requirements, deployment, DTR hours, and evaluation.',
+                        helperText:
+                            'Updated automatically from requirements, deployment, DTR hours, and evaluation.',
                       ),
                       child: Text(
                         status,
@@ -628,13 +634,16 @@ class _ProfileHeader extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 30,
-                backgroundColor: const Color(0xFFE7EBF0),
+                backgroundColor: AppTheme.border,
                 foregroundColor: AppTheme.muted,
                 child: Text(
                   student.displayName.isEmpty
                       ? '?'
                       : student.displayName[0].toUpperCase(),
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -669,12 +678,12 @@ class _ProfileHeader extends StatelessWidget {
               ),
               Expanded(
                 flex: 2,
-                child: _HeaderValue('Year Level', student.yearLevel ?? 'Not set'),
+                child: _HeaderValue(
+                  'Year Level',
+                  student.yearLevel ?? 'Not set',
+                ),
               ),
-              Expanded(
-                flex: 2,
-                child: _HeaderValue('Email', student.email),
-              ),
+              Expanded(flex: 2, child: _HeaderValue('Email', student.email)),
               const SizedBox(width: 10),
               SizedBox(
                 width: 150,
@@ -713,10 +722,7 @@ class _ProfileHeader extends StatelessWidget {
         const Divider(height: 1),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 10),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _ProfileTabs(),
-          ),
+          child: Align(alignment: Alignment.centerLeft, child: _ProfileTabs()),
         ),
       ],
     ),
@@ -775,10 +781,7 @@ class _HeaderValue extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        label,
-        style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
-      ),
+      Text(label, style: const TextStyle(fontSize: 8.8, color: AppTheme.muted)),
       const SizedBox(height: 3),
       Text(
         value,
@@ -810,8 +813,16 @@ class _InternshipDetails extends StatelessWidget {
         InfoRow('Start Date', shortDate(profile.startDate), labelWidth: 105),
         InfoRow('End Date', shortDate(profile.endDate), labelWidth: 105),
         InfoRow('Required Hours', '${profile.requiredHours}', labelWidth: 105),
-        InfoRow('Completed Hours', 'Calculated from verified DTR', labelWidth: 105),
-        InfoRow('Program Coordinator', coordinatorName ?? 'Unassigned', labelWidth: 105),
+        InfoRow(
+          'Completed Hours',
+          'Calculated from verified DTR',
+          labelWidth: 105,
+        ),
+        InfoRow(
+          'Program Coordinator',
+          coordinatorName ?? 'Unassigned',
+          labelWidth: 105,
+        ),
         InfoRow('Company Supervisor', profile.supervisorName, labelWidth: 105),
       ],
     ),
@@ -845,7 +856,7 @@ class _ProgressCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 8,
-              backgroundColor: const Color(0xFFEEF1F5),
+              backgroundColor: AppTheme.border,
             ),
           ),
           const SizedBox(height: 7),
@@ -943,7 +954,10 @@ class _RecentActivity extends StatelessWidget {
                   ),
                   Text(
                     DateFormat.MMMd().format(record.createdAt),
-                    style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      color: AppTheme.muted,
+                    ),
                   ),
                 ],
               ),

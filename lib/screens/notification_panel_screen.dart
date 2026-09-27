@@ -27,6 +27,7 @@ class _StudentNotificationPanelScreenState
     extends State<StudentNotificationPanelScreen> {
   String _query = '';
   String _type = 'all';
+  String _dateFilter = 'All Dates';
   int _tab = 0;
   NotificationRecord? _selected;
 
@@ -63,7 +64,22 @@ class _StudentNotificationPanelScreenState
             _query.isEmpty ||
             '${notice.title} ${notice.message}'.toLowerCase().contains(_query);
         final typeMatches = _type == 'all' || notice.type == _type;
-        return tabMatches && queryMatches && typeMatches;
+        final now = DateTime.now();
+        final created = notice.createdAt;
+        final dateMatches = switch (_dateFilter) {
+          'Today' =>
+            created.year == now.year &&
+                created.month == now.month &&
+                created.day == now.day,
+          'Last 7 Days' => created.isAfter(
+            now.subtract(const Duration(days: 7)),
+          ),
+          'Last 30 Days' => created.isAfter(
+            now.subtract(const Duration(days: 30)),
+          ),
+          _ => true,
+        };
+        return tabMatches && queryMatches && typeMatches && dateMatches;
       }).toList();
       final selected =
           _selected != null &&
@@ -168,20 +184,31 @@ class _StudentNotificationPanelScreenState
                       ),
                     ),
                     SizedBox(
-                      width: 150,
+                      width: 160,
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
-                        initialValue: 'All Dates',
-                        decoration: const InputDecoration(
-                          labelText: 'All Dates',
-                        ),
+                        initialValue: _dateFilter,
+                        decoration: const InputDecoration(labelText: 'Date'),
                         items: const [
                           DropdownMenuItem(
                             value: 'All Dates',
                             child: Text('All Dates'),
                           ),
+                          DropdownMenuItem(
+                            value: 'Today',
+                            child: Text('Today'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Last 7 Days',
+                            child: Text('Last 7 Days'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Last 30 Days',
+                            child: Text('Last 30 Days'),
+                          ),
                         ],
-                        onChanged: (_) {},
+                        onChanged: (value) =>
+                            setState(() => _dateFilter = value ?? 'All Dates'),
                       ),
                     ),
                   ],
@@ -283,9 +310,9 @@ class _NotificationList extends StatelessWidget {
                 onTap: () => onSelect(notice),
                 child: Container(
                   color: active
-                      ? const Color(0xFFEFF6FF)
+                      ? AppTheme.surfaceBlue
                       : unread
-                      ? const Color(0xFFFBFDFF)
+                      ? AppTheme.surface
                       : Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -521,7 +548,7 @@ class _TypePill extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: const Color(0xFFF2F4F7),
+      color: AppTheme.surfaceSoft,
       borderRadius: BorderRadius.circular(10),
     ),
     child: Text(

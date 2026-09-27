@@ -23,36 +23,36 @@ class StudentStatusTrackerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Status Tracker',
-    subtitle: 'Track requirements, verification, deployment, internship progress, completion, and archiving.',
+    subtitle:
+        'Track requirements, verification, deployment, internship progress, completion, and archiving.',
     eyebrow: 'My Internship  ›  Status Tracker',
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: repository.watchRequirementDefinitions(),
-      builder: (context, definitionSnapshot) =>
-          StreamBuilder<List<RequirementRecord>>(
-            stream: repository.watchRequirements(user),
-            builder: (context, recordSnapshot) {
-              final definitions =
-                  (definitionSnapshot.data ?? const <RequirementDefinition>[])
-                      .where(
-                        (definition) =>
-                            definition.program == 'All Programs' ||
-                            definition.program == user.program,
-                      )
-                      .toList();
-              final records =
-                  recordSnapshot.data ?? const <RequirementRecord>[];
-              final items = definitions.isEmpty
-                  ? records
-                        .map(
-                          (record) => _TrackerItem(
-                            title: record.title,
-                            dueDate: record.dueDate,
-                            record: record,
-                          ),
-                        )
-                        .toList()
-                  : definitions.map((definition) {
-                      final matches = records
+      builder: (context, definitionSnapshot) => StreamBuilder<List<RequirementRecord>>(
+        stream: repository.watchRequirements(user),
+        builder: (context, recordSnapshot) {
+          final definitions =
+              (definitionSnapshot.data ?? const <RequirementDefinition>[])
+                  .where(
+                    (definition) =>
+                        definition.program == 'All Programs' ||
+                        definition.program == user.program,
+                  )
+                  .toList();
+          final records = recordSnapshot.data ?? const <RequirementRecord>[];
+          final items = definitions.isEmpty
+              ? records
+                    .map(
+                      (record) => _TrackerItem(
+                        title: record.title,
+                        dueDate: record.dueDate,
+                        record: record,
+                      ),
+                    )
+                    .toList()
+              : definitions.map((definition) {
+                  final matches =
+                      records
                           .where(
                             (record) =>
                                 record.definitionId == definition.id ||
@@ -63,95 +63,100 @@ class StudentStatusTrackerScreen extends StatelessWidget {
                         ..sort(
                           (a, b) => b.submittedAt.compareTo(a.submittedAt),
                         );
-                      return _TrackerItem(
-                        title: definition.title,
-                        dueDate: definition.dueDate,
-                        record: matches.firstOrNull,
-                      );
-                    }).toList();
-
-              return StreamBuilder<InternshipProfileRecord?>(
-                stream: repository.watchInternshipProfile(user.uid),
-                builder: (context, profileSnapshot) {
-                  final stage = profileSnapshot.data?.stage ??
-                      InternshipStage.pendingRequirements;
-                  return Column(
-                    children: [
-                      _InternshipStageProgress(stage: stage),
-                       const SizedBox(height: 8),
-                       StreamBuilder<List<String>>(
-                         stream: repository.watchStudentEvaluationStatuses(
-                           user.uid,
-                           user.academicYear,
-                         ),
-                         builder: (context, evaluationSnapshot) {
-                           final statuses =
-                               evaluationSnapshot.data ?? const <String>[];
-
-                           final statusText =
-                               user.academicYear == null ||
-                                       user.academicYear!.trim().isEmpty
-                                   ? 'Academic year is not set. Ask your coordinator to check your internship profile.'
-                                   : evaluationSnapshot.hasError
-                                       ? 'Evaluation status is temporarily unavailable.'
-                                       : !evaluationSnapshot.hasData
-                                           ? 'Checking evaluation statuses...'
-                                           : statuses.isEmpty
-                                               ? 'No evaluation status recorded for this academic year yet. If your supervisor already submitted an evaluation, ask your coordinator to confirm.'
-                                               : statuses.asMap().entries.map((entry) {
-                                                   final label = entry.value == 'submitted'
-                                                       ? 'Submitted'
-                                                       : 'Pending';
-                                                   return 'Evaluation ${entry.key + 1}: $label';
-                                                 }).join('\n');
-                           return SectionCard(
-                             title: 'Supervisor Evaluations',
-                             subtitle: 'Submission status only. Ratings and comments are confidential.',
-                             child: Text(statusText),
-                           );
-                         },
-                       ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final main = _TrackerList(
-                              items: items,
-                              repository: repository,
-                            );
-                            final side = _StudentTrackerSide(
-                              user: user,
-                              items: items,
-                            );
-                            if (constraints.maxWidth < 920) {
-                              return ListView(
-                                children: [
-                                  main,
-                                  const SizedBox(height: 12),
-                                  side,
-                                ],
-                              );
-                            }
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 7,
-                                  child: SingleChildScrollView(child: main),
-                                ),
-                                const SizedBox(width: 12),
-                                SizedBox(width: 285, child: side),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                  return _TrackerItem(
+                    title: definition.title,
+                    dueDate: definition.dueDate,
+                    record: matches.firstOrNull,
                   );
-                },
+                }).toList();
+
+          return StreamBuilder<InternshipProfileRecord?>(
+            stream: repository.watchInternshipProfile(user.uid),
+            builder: (context, profileSnapshot) {
+              final stage =
+                  profileSnapshot.data?.stage ??
+                  InternshipStage.pendingRequirements;
+              return Column(
+                children: [
+                  _InternshipStageProgress(stage: stage),
+                  const SizedBox(height: 8),
+                  StreamBuilder<List<String>>(
+                    stream: repository.watchStudentEvaluationStatuses(
+                      user.uid,
+                      user.academicYear,
+                    ),
+                    builder: (context, evaluationSnapshot) {
+                      final statuses =
+                          evaluationSnapshot.data ?? const <String>[];
+
+                      final statusText =
+                          user.academicYear == null ||
+                              user.academicYear!.trim().isEmpty
+                          ? 'Academic year is not set. Ask your coordinator to check your internship profile.'
+                          : evaluationSnapshot.hasError
+                          ? 'Evaluation status is temporarily unavailable.'
+                          : !evaluationSnapshot.hasData
+                          ? 'Checking evaluation statuses...'
+                          : statuses.isEmpty
+                          ? 'No evaluation status recorded for this academic year yet. If your supervisor already submitted an evaluation, ask your coordinator to confirm.'
+                          : statuses
+                                .asMap()
+                                .entries
+                                .map((entry) {
+                                  final label = entry.value == 'submitted'
+                                      ? 'Submitted'
+                                      : 'Pending';
+                                  return 'Evaluation ${entry.key + 1}: $label';
+                                })
+                                .join('\n');
+                      return SectionCard(
+                        title: 'Supervisor Evaluations',
+                        subtitle:
+                            'Submission status only. Ratings and comments are confidential.',
+                        child: Text(statusText),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final main = _TrackerList(
+                          items: items,
+                          repository: repository,
+                        );
+                        final side = _StudentTrackerSide(
+                          user: user,
+                          items: items,
+                        );
+                        if (constraints.maxWidth < 920) {
+                          return ListView(
+                            children: [main, const SizedBox(height: 12), side],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 7,
+                              child: SingleChildScrollView(child: main),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 285,
+                              child: SingleChildScrollView(child: side),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
             },
-          ),
+          );
+        },
+      ),
     ),
   );
 }
@@ -177,10 +182,7 @@ class _InternshipStageProgress extends StatelessWidget {
               runSpacing: 8,
               children: [
                 for (var index = 0; index < stages.length; index++)
-                  StatusBadge(
-                    stages[index].label,
-                    compact: true,
-                  ),
+                  StatusBadge(stages[index].label, compact: true),
               ],
             );
           }
@@ -197,7 +199,7 @@ class _InternshipStageProgress extends StatelessWidget {
                           shape: BoxShape.circle,
                           color: index <= currentIndex
                               ? AppTheme.blue
-                              : const Color(0xFFE8EDF4),
+                              : AppTheme.border,
                         ),
                         alignment: Alignment.center,
                         child: Icon(
@@ -238,7 +240,7 @@ class _InternshipStageProgress extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 28),
                     color: index < currentIndex
                         ? AppTheme.blue
-                        : const Color(0xFFE8EDF4),
+                        : AppTheme.border,
                   ),
               ],
             ],
@@ -297,7 +299,7 @@ class _TrackerList extends StatelessWidget {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF2F4F7),
+                      color: AppTheme.surfaceSoft,
                       borderRadius: BorderRadius.circular(7),
                     ),
                     child: const Icon(
@@ -353,7 +355,7 @@ class _TrackerList extends StatelessWidget {
                           child: LinearProgressIndicator(
                             value: progress,
                             minHeight: 6,
-                            backgroundColor: const Color(0xFFEEF1F5),
+                            backgroundColor: AppTheme.border,
                           ),
                         ),
                         if (record?.remarks?.isNotEmpty == true) ...[
@@ -411,12 +413,14 @@ class _StudentTrackerSide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final upcoming = items
-        .where(
-          (item) => item.dueDate != null && item.dueDate!.isAfter(DateTime.now()),
-        )
-        .toList()
-      ..sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
+    final upcoming =
+        items
+            .where(
+              (item) =>
+                  item.dueDate != null && item.dueDate!.isAfter(DateTime.now()),
+            )
+            .toList()
+          ..sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
     return Column(
       children: [
         SectionCard(
@@ -427,7 +431,7 @@ class _StudentTrackerSide extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 22,
-                    backgroundColor: const Color(0xFFE9EDF3),
+                    backgroundColor: AppTheme.surfaceSoft,
                     foregroundColor: AppTheme.muted,
                     child: Text(
                       user.displayName.isEmpty
@@ -461,9 +465,17 @@ class _StudentTrackerSide extends StatelessWidget {
               ),
               const Divider(height: 20),
               InfoRow('Program', user.program ?? 'Not set', labelWidth: 72),
-              InfoRow('Year Level', user.yearLevel ?? 'Not set', labelWidth: 72),
+              InfoRow(
+                'Year Level',
+                user.yearLevel ?? 'Not set',
+                labelWidth: 72,
+              ),
               InfoRow('Email', user.email, labelWidth: 72),
-              InfoRow('Adviser', user.coordinatorName ?? 'Unassigned', labelWidth: 72),
+              InfoRow(
+                'Adviser',
+                user.coordinatorName ?? 'Unassigned',
+                labelWidth: 72,
+              ),
             ],
           ),
         ),
@@ -477,7 +489,9 @@ class _StudentTrackerSide extends StatelessWidget {
                 )
               : Column(
                   children: upcoming.take(6).map((item) {
-                    final days = item.dueDate!.difference(DateTime.now()).inDays;
+                    final days = item.dueDate!
+                        .difference(DateTime.now())
+                        .inDays;
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 5),
                       child: Row(
@@ -514,7 +528,9 @@ class _StudentTrackerSide extends StatelessWidget {
                           Text(
                             days <= 0 ? 'Due' : '$days days left',
                             style: TextStyle(
-                              color: days <= 3 ? AppTheme.danger : AppTheme.muted,
+                              color: days <= 3
+                                  ? AppTheme.danger
+                                  : AppTheme.muted,
                               fontSize: 8.5,
                             ),
                           ),
@@ -529,7 +545,7 @@ class _StudentTrackerSide extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
-            color: const Color(0xFFF7FAFD),
+            color: AppTheme.surfaceSoft,
             border: Border.all(color: AppTheme.border),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -555,7 +571,6 @@ class _StudentTrackerSide extends StatelessWidget {
     );
   }
 }
-
 
 class StudentRequirementsChecklistScreen extends StatefulWidget {
   const StudentRequirementsChecklistScreen({
@@ -597,7 +612,9 @@ class _StudentRequirementsChecklistScreenState
     if (!mounted) return false;
     if (selectedSize == 0 || selectedSize > 5 * 1024 * 1024) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Each file must be non-empty and at most 5 MB.')),
+        const SnackBar(
+          content: Text('Each file must be non-empty and at most 5 MB.'),
+        ),
       );
       return false;
     }
@@ -613,14 +630,21 @@ class _StudentRequirementsChecklistScreenState
     String? onlyDefinitionId,
   }) async {
     if (_uploading) return;
-    if (onlyDefinitionId != null && !_selectedFiles.containsKey(onlyDefinitionId)) {
-      final item = items.where((item) => item.definition.id == onlyDefinitionId).firstOrNull;
+    if (onlyDefinitionId != null &&
+        !_selectedFiles.containsKey(onlyDefinitionId)) {
+      final item = items
+          .where((item) => item.definition.id == onlyDefinitionId)
+          .firstOrNull;
       if (item == null || !await _chooseFile(item)) return;
     }
-    final selected = items.where((item) =>
-      _selectedFiles.containsKey(item.definition.id) &&
-      (onlyDefinitionId == null || item.definition.id == onlyDefinitionId),
-    ).toList();
+    final selected = items
+        .where(
+          (item) =>
+              _selectedFiles.containsKey(item.definition.id) &&
+              (onlyDefinitionId == null ||
+                  item.definition.id == onlyDefinitionId),
+        )
+        .toList();
     if (selected.isEmpty) return;
 
     setState(() {
@@ -668,10 +692,14 @@ class _StudentRequirementsChecklistScreenState
       _uploading = false;
       _uploadingTitle = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('$successes submitted; $failures need attention. '
-          'Review each requirement before trying again.'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$successes submitted; $failures need attention. '
+          'Review each requirement before trying again.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -682,29 +710,28 @@ class _StudentRequirementsChecklistScreenState
     eyebrow: 'My Internship  ›  Requirements Checklist',
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: widget.repository.watchRequirementDefinitions(),
-      builder: (context, definitionSnapshot) =>
-          StreamBuilder<List<RequirementRecord>>(
-            stream: widget.repository.watchRequirements(widget.user),
-            builder: (context, recordSnapshot) {
-              final records =
-                  recordSnapshot.data ?? const <RequirementRecord>[];
-              final definitions =
-                  (definitionSnapshot.data ?? const <RequirementDefinition>[])
-                      .where(
-                        (definition) =>
-                            definition.active &&
-                            (definition.program == 'All Programs' ||
-                                definition.program == widget.user.program),
-                      )
-                      .toList()
-                    ..sort((a, b) {
-                      final order = a.sortOrder.compareTo(b.sortOrder);
-                      if (order != 0) return order;
-                      return a.dueDate.compareTo(b.dueDate);
-                    });
+      builder: (context, definitionSnapshot) => StreamBuilder<List<RequirementRecord>>(
+        stream: widget.repository.watchRequirements(widget.user),
+        builder: (context, recordSnapshot) {
+          final records = recordSnapshot.data ?? const <RequirementRecord>[];
+          final definitions =
+              (definitionSnapshot.data ?? const <RequirementDefinition>[])
+                  .where(
+                    (definition) =>
+                        definition.active &&
+                        (definition.program == 'All Programs' ||
+                            definition.program == widget.user.program),
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final order = a.sortOrder.compareTo(b.sortOrder);
+                  if (order != 0) return order;
+                  return a.dueDate.compareTo(b.dueDate);
+                });
 
-              final items = definitions.map((definition) {
-                final matches = records
+          final items = definitions.map((definition) {
+            final matches =
+                records
                     .where(
                       (record) =>
                           record.definitionId == definition.id ||
@@ -713,126 +740,130 @@ class _StudentRequirementsChecklistScreenState
                     )
                     .toList()
                   ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-                return _RequirementChecklistItem(
-                  definition: definition,
-                  record: matches.firstOrNull,
-                );
-              }).toList();
+            return _RequirementChecklistItem(
+              definition: definition,
+              record: matches.firstOrNull,
+            );
+          }).toList();
 
-              final completed = items
-                  .where((item) => item.record?.status == ReviewStatus.verified)
-                  .length;
-              final needsAttention = items.where((item) {
-                final status = item.record?.status;
-                return item.record == null ||
+          final completed = items
+              .where((item) => item.record?.status == ReviewStatus.verified)
+              .length;
+          final needsAttention = items.where((item) {
+            final status = item.record?.status;
+            return item.record == null ||
+                status == ReviewStatus.needsRevision ||
+                status == ReviewStatus.rejected;
+          }).length;
+          final upcoming = items
+              .where(
+                (item) =>
+                    item.definition.dueDate.isAfter(DateTime.now()) &&
+                    item.record?.status != ReviewStatus.verified,
+              )
+              .length;
+
+          final visible = items.where((item) {
+            final haystack =
+                '${item.definition.title} ${item.definition.description} ${item.definition.category}'
+                    .toLowerCase();
+            final queryMatches =
+                _query.isEmpty || haystack.contains(_query.toLowerCase());
+            final status = item.record?.status;
+            final filterMatches = switch (_filter) {
+              'Completed' => status == ReviewStatus.verified,
+              'Needs Attention' =>
+                item.record == null ||
                     status == ReviewStatus.needsRevision ||
-                    status == ReviewStatus.rejected;
-              }).length;
-              final upcoming = items
-                  .where(
-                    (item) =>
-                        item.definition.dueDate.isAfter(DateTime.now()) &&
-                        item.record?.status != ReviewStatus.verified,
-                  )
-                  .length;
+                    status == ReviewStatus.rejected,
+              'Submitted' => item.record != null,
+              _ => true,
+            };
+            return queryMatches && filterMatches;
+          }).toList();
 
-              final visible = items.where((item) {
-                final haystack =
-                    '${item.definition.title} ${item.definition.description} ${item.definition.category}'
-                        .toLowerCase();
-                final queryMatches =
-                    _query.isEmpty || haystack.contains(_query.toLowerCase());
-                final status = item.record?.status;
-                final filterMatches = switch (_filter) {
-                  'Completed' => status == ReviewStatus.verified,
-                  'Needs Attention' =>
-                    item.record == null ||
-                        status == ReviewStatus.needsRevision ||
-                        status == ReviewStatus.rejected,
-                  'Submitted' => item.record != null,
-                  _ => true,
-                };
-                return queryMatches && filterMatches;
-              }).toList();
-
-              return ListView(
-                children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = constraints.maxWidth;
-                      final columns = width >= 900 ? 4 : width >= 560 ? 2 : 1;
-                      final cardWidth = columns == 1
-                          ? width
-                          : (width - ((columns - 1) * 10)) / columns;
-                      return Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _ChecklistSummaryCard(
-                            width: cardWidth,
-                            icon: Icons.fact_check_outlined,
-                            label: 'Total Requirements',
-                            value: '${items.length}',
+          return ListView(
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  final columns = width >= 900
+                      ? 4
+                      : width >= 560
+                      ? 2
+                      : 1;
+                  final cardWidth = columns == 1
+                      ? width
+                      : (width - ((columns - 1) * 10)) / columns;
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _ChecklistSummaryCard(
+                        width: cardWidth,
+                        icon: Icons.fact_check_outlined,
+                        label: 'Total Requirements',
+                        value: '${items.length}',
+                      ),
+                      _ChecklistSummaryCard(
+                        width: cardWidth,
+                        icon: Icons.verified_outlined,
+                        label: 'Completed',
+                        value: '$completed',
+                        accent: AppTheme.success,
+                      ),
+                      _ChecklistSummaryCard(
+                        width: cardWidth,
+                        icon: Icons.priority_high_rounded,
+                        label: 'Needs Attention',
+                        value: '$needsAttention',
+                        accent: AppTheme.warning,
+                      ),
+                      _ChecklistSummaryCard(
+                        width: cardWidth,
+                        icon: Icons.event_outlined,
+                        label: 'Upcoming',
+                        value: '$upcoming',
+                        accent: AppTheme.purple,
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 310,
+                        child: TextField(
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search_rounded, size: 18),
+                            hintText: 'Search requirements…',
                           ),
-                          _ChecklistSummaryCard(
-                            width: cardWidth,
-                            icon: Icons.verified_outlined,
-                            label: 'Completed',
-                            value: '$completed',
-                            accent: AppTheme.success,
+                          onChanged: (value) => setState(() => _query = value),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 190,
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: _filter,
+                          decoration: const InputDecoration(
+                            labelText: 'Checklist Status',
                           ),
-                          _ChecklistSummaryCard(
-                            width: cardWidth,
-                            icon: Icons.priority_high_rounded,
-                            label: 'Needs Attention',
-                            value: '$needsAttention',
-                            accent: AppTheme.warning,
-                          ),
-                          _ChecklistSummaryCard(
-                            width: cardWidth,
-                            icon: Icons.event_outlined,
-                            label: 'Upcoming',
-                            value: '$upcoming',
-                            accent: AppTheme.purple,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 310,
-                            child: TextField(
-                              decoration: const InputDecoration(
-                                prefixIcon: Icon(Icons.search_rounded, size: 18),
-                                hintText: 'Search requirements…',
-                              ),
-                              onChanged: (value) =>
-                                  setState(() => _query = value),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 190,
-                            child: DropdownButtonFormField<String>(
-                              isExpanded: true,
-                              initialValue: _filter,
-                              decoration: const InputDecoration(
-                                labelText: 'Checklist Status',
-                              ),
-                              items: const [
-                                'All Requirements',
-                                'Completed',
-                                'Submitted',
-                                'Needs Attention',
-                              ]
+                          items:
+                              const [
+                                    'All Requirements',
+                                    'Completed',
+                                    'Submitted',
+                                    'Needs Attention',
+                                  ]
                                   .map(
                                     (value) => DropdownMenuItem(
                                       value: value,
@@ -840,75 +871,76 @@ class _StudentRequirementsChecklistScreenState
                                     ),
                                   )
                                   .toList(),
-                              onChanged: (value) => setState(
-                                () => _filter = value ?? 'All Requirements',
-                              ),
-                            ),
+                          onChanged: (value) => setState(
+                            () => _filter = value ?? 'All Requirements',
                           ),
-                          if (widget.user.program?.isNotEmpty == true)
-                            StatusBadge(widget.user.program!, compact: true),
-                          if (widget.user.academicYear?.isNotEmpty == true)
-                            StatusBadge(
-                              widget.user.academicYear!,
-                              compact: true,
-                            ),
-                        ],
+                        ),
+                      ),
+                      if (widget.user.program?.isNotEmpty == true)
+                        StatusBadge(widget.user.program!, compact: true),
+                      if (widget.user.academicYear?.isNotEmpty == true)
+                        StatusBadge(widget.user.academicYear!, compact: true),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_selectedFiles.isNotEmpty || _uploading) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _uploading
+                              ? 'Uploading: ${_uploadingTitle ?? 'preparing'}'
+                              : '${_selectedFiles.length} file(s) ready • 5 MB maximum each',
+                        ),
+                        FilledButton.icon(
+                          onPressed: _uploading
+                              ? null
+                              : () => _submitSelected(items),
+                          icon: const Icon(Icons.cloud_upload_outlined),
+                          label: const Text('Submit All Selected Files'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (visible.isEmpty)
+                const EmptyWorkflowState(
+                  icon: Icons.fact_check_outlined,
+                  title: 'No matching requirements',
+                  message:
+                      'Try another filter, or contact your coordinator if your checklist is empty.',
+                )
+              else
+                ...visible.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _RequirementChecklistTile(
+                      item: item,
+                      repository: widget.repository,
+                      selectedFile: _selectedFiles[item.definition.id],
+                      uploadError: _uploadErrors[item.definition.id],
+                      uploading: _uploading,
+                      onChooseFile: () => _chooseFile(item),
+                      onSubmit: () => _submitSelected(
+                        items,
+                        onlyDefinitionId: item.definition.id,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (_selectedFiles.isNotEmpty || _uploading) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(_uploading
-                                ? 'Uploading: ${_uploadingTitle ?? 'preparing'}'
-                                : '${_selectedFiles.length} file(s) ready • 5 MB maximum each'),
-                            FilledButton.icon(
-                              onPressed: _uploading ? null : () => _submitSelected(items),
-                              icon: const Icon(Icons.cloud_upload_outlined),
-                              label: const Text('Submit All Selected Files'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (visible.isEmpty)
-                    const EmptyWorkflowState(
-                      icon: Icons.fact_check_outlined,
-                      title: 'No matching requirements',
-                      message:
-                          'Try another filter, or contact your coordinator if your checklist is empty.',
-                    )
-                  else
-                    ...visible.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _RequirementChecklistTile(
-                          item: item,
-                          repository: widget.repository,
-                          selectedFile: _selectedFiles[item.definition.id],
-                          uploadError: _uploadErrors[item.definition.id],
-                          uploading: _uploading,
-                          onChooseFile: () => _chooseFile(item),
-                          onSubmit: () => _submitSelected(
-                            items,
-                            onlyDefinitionId: item.definition.id,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
+                ),
+            ],
+          );
+        },
+      ),
     ),
   );
 }
@@ -1016,7 +1048,8 @@ class _RequirementChecklistTile extends StatelessWidget {
     final record = item.record;
     final statusLabel = _studentRequirementStatusLabel(record);
     final completed = record?.status == ReviewStatus.verified;
-    final needsAttention = record == null ||
+    final needsAttention =
+        record == null ||
         record.status == ReviewStatus.needsRevision ||
         record.status == ReviewStatus.rejected;
     final indicator = completed
@@ -1106,24 +1139,44 @@ class _RequirementChecklistTile extends StatelessWidget {
                 if (definition.instructions.isNotEmpty &&
                     definition.instructions != definition.description) ...[
                   const SizedBox(height: 7),
-                  Text('Instructions: ${definition.instructions}',
-                      style: const TextStyle(fontSize: 10.5, color: AppTheme.muted)),
+                  Text(
+                    'Instructions: ${definition.instructions}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppTheme.muted,
+                    ),
+                  ),
                 ],
                 if (record?.remarks?.isNotEmpty == true) ...[
                   const SizedBox(height: 7),
-                  Text('Coordinator feedback: ${record!.remarks}',
-                      style: const TextStyle(fontSize: 10.5, color: AppTheme.warning)),
+                  Text(
+                    'Coordinator feedback: ${record!.remarks}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppTheme.warning,
+                    ),
+                  ),
                 ],
                 if (selectedFile != null) ...[
                   const SizedBox(height: 7),
-                  Text('Ready to upload: ${selectedFile!.name} '
-                      '(5 MB maximum per file)',
-                      style: const TextStyle(fontSize: 10.5, color: AppTheme.blue)),
+                  Text(
+                    'Ready to upload: ${selectedFile!.name} '
+                    '(5 MB maximum per file)',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppTheme.blue,
+                    ),
+                  ),
                 ],
                 if (uploadError != null) ...[
                   const SizedBox(height: 7),
-                  Text(uploadError!,
-                      style: const TextStyle(fontSize: 10.5, color: AppTheme.warning)),
+                  Text(
+                    uploadError!,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppTheme.warning,
+                    ),
+                  ),
                 ],
               ],
             );
@@ -1156,7 +1209,9 @@ class _RequirementChecklistTile extends StatelessWidget {
                 if (record?.storagePath?.isNotEmpty == true)
                   OutlinedButton.icon(
                     onPressed: () => openStorageDocument(
-                      context, repository, record!.storagePath!,
+                      context,
+                      repository,
+                      record!.storagePath!,
                     ),
                     icon: const Icon(Icons.description_outlined, size: 15),
                     label: const Text('View Uploaded File'),
@@ -1165,12 +1220,16 @@ class _RequirementChecklistTile extends StatelessWidget {
                   OutlinedButton.icon(
                     onPressed: uploading ? null : onChooseFile,
                     icon: const Icon(Icons.attach_file_outlined, size: 15),
-                    label: Text(selectedFile == null ? 'Choose File' : 'Change File'),
+                    label: Text(
+                      selectedFile == null ? 'Choose File' : 'Change File',
+                    ),
                   ),
                   FilledButton.icon(
                     onPressed: uploading ? null : onSubmit,
                     icon: const Icon(Icons.upload_file_outlined, size: 15),
-                    label: Text(selectedFile == null ? 'Submit' : 'Submit Selected'),
+                    label: Text(
+                      selectedFile == null ? 'Submit' : 'Submit Selected',
+                    ),
                   ),
                 ],
               ],
@@ -1226,10 +1285,7 @@ class _ChecklistMeta extends StatelessWidget {
     children: [
       Icon(icon, size: 13, color: AppTheme.subtle),
       const SizedBox(width: 4),
-      Text(
-        text,
-        style: const TextStyle(color: AppTheme.muted, fontSize: 9.5),
-      ),
+      Text(text, style: const TextStyle(color: AppTheme.muted, fontSize: 9.5)),
     ],
   );
 }
@@ -1266,7 +1322,8 @@ class _DocumentSubmissionBinScreenState
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Document Submission Bin',
-    subtitle: 'View instructions, download forms, and upload required documents.',
+    subtitle:
+        'View instructions, download forms, and upload required documents.',
     eyebrow: 'Home  ›  Document Submission Bin',
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: widget.repository.watchRequirementDefinitions(),
@@ -1291,24 +1348,30 @@ class _DocumentSubmissionBinScreenState
               }.toList();
               final definitions = allDefinitions.where((definition) {
                 final record = _recordFor(definition, records);
-                final matchesQuery = _query.isEmpty ||
+                final matchesQuery =
+                    _query.isEmpty ||
                     '${definition.title} ${definition.description}'
                         .toLowerCase()
                         .contains(_query);
-                final matchesStatus = _status == 'All Statuses' ||
+                final matchesStatus =
+                    _status == 'All Statuses' ||
                     (_status == 'Not submitted'
                         ? record == null
                         : _studentRequirementStatusLabel(record) == _status);
-                final matchesCategory = _category == 'All Document Types' ||
+                final matchesCategory =
+                    _category == 'All Document Types' ||
                     definition.category == _category;
                 return matchesQuery && matchesStatus && matchesCategory;
               }).toList();
               final initialDefinitionId = widget.initialDefinitionId;
-              final selected = _selected != null &&
+              final selected =
+                  _selected != null &&
                       definitions.any((item) => item.id == _selected!.id)
                   ? definitions.firstWhere((item) => item.id == _selected!.id)
                   : initialDefinitionId != null &&
-                        definitions.any((item) => item.id == initialDefinitionId)
+                        definitions.any(
+                          (item) => item.id == initialDefinitionId,
+                        )
                   ? definitions.firstWhere(
                       (item) => item.id == initialDefinitionId,
                     )
@@ -1336,19 +1399,15 @@ class _DocumentSubmissionBinScreenState
                       ),
                       _filterBox(
                         width: 160,
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: widget.user.academicYear ?? 'Current',
-                          decoration: const InputDecoration(labelText: 'Academic Year'),
-                          items: [widget.user.academicYear ?? 'Current']
-                              .map(
-                                (value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(value),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (_) {},
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Academic Year',
+                          ),
+                          child: Text(
+                            widget.user.academicYear ?? 'Current',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                       _filterBox(
@@ -1358,7 +1417,9 @@ class _DocumentSubmissionBinScreenState
                           initialValue: categories.contains(_category)
                               ? _category
                               : 'All Document Types',
-                          decoration: const InputDecoration(labelText: 'Document Type'),
+                          decoration: const InputDecoration(
+                            labelText: 'Document Type',
+                          ),
                           items: categories
                               .map(
                                 (value) => DropdownMenuItem(
@@ -1377,26 +1438,28 @@ class _DocumentSubmissionBinScreenState
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
                           initialValue: _status,
-                          decoration: const InputDecoration(labelText: 'Status'),
-                          items: const [
-                            'All Statuses',
-                            'Not submitted',
-                            'Submitted',
-                            'Under review',
-                            'Verified',
-                            'Needs revision',
-                            'Rejected',
-                          ]
-                              .map(
-                                (value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(value),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) => setState(
-                            () => _status = value ?? 'All Statuses',
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
                           ),
+                          items:
+                              const [
+                                    'All Statuses',
+                                    'Not submitted',
+                                    'Submitted',
+                                    'Under review',
+                                    'Verified',
+                                    'Needs revision',
+                                    'Rejected',
+                                  ]
+                                  .map(
+                                    (value) => DropdownMenuItem(
+                                      value: value,
+                                      child: Text(value),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged: (value) =>
+                              setState(() => _status = value ?? 'All Statuses'),
                         ),
                       ),
                     ],
@@ -1409,7 +1472,8 @@ class _DocumentSubmissionBinScreenState
                           definitions: definitions,
                           records: records,
                           selected: selected,
-                          onSelect: (value) => setState(() => _selected = value),
+                          onSelect: (value) =>
+                              setState(() => _selected = value),
                         );
                         final detail = selected == null
                             ? const EmptyWorkflowState(
@@ -1462,14 +1526,15 @@ class _DocumentSubmissionBinScreenState
     RequirementDefinition definition,
     List<RequirementRecord> records,
   ) {
-    final matches = records
-        .where(
-          (record) =>
-              record.definitionId == definition.id ||
-              record.title.toLowerCase() == definition.title.toLowerCase(),
-        )
-        .toList()
-      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+    final matches =
+        records
+            .where(
+              (record) =>
+                  record.definitionId == definition.id ||
+                  record.title.toLowerCase() == definition.title.toLowerCase(),
+            )
+            .toList()
+          ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
     return matches.firstOrNull;
   }
 }
@@ -1513,22 +1578,23 @@ class _SubmissionGrid extends StatelessWidget {
           itemCount: definitions.length,
           itemBuilder: (context, index) {
             final definition = definitions[index];
-            final matches = records
-                .where(
-                  (record) =>
-                      record.definitionId == definition.id ||
-                      record.title.toLowerCase() ==
-                          definition.title.toLowerCase(),
-                )
-                .toList()
-              ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+            final matches =
+                records
+                    .where(
+                      (record) =>
+                          record.definitionId == definition.id ||
+                          record.title.toLowerCase() ==
+                              definition.title.toLowerCase(),
+                    )
+                    .toList()
+                  ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
             final record = matches.firstOrNull;
             final active = selected?.id == definition.id;
             return InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: () => onSelect(definition),
               child: Card(
-                color: active ? const Color(0xFFF1F7FF) : Colors.white,
+                color: active ? AppTheme.surfaceBlue : Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: BorderSide(
@@ -1608,7 +1674,10 @@ class _SubmissionDetail extends StatelessWidget {
     children: [
       SectionCard(
         title: definition.title,
-        trailing: StatusBadge(_studentRequirementStatusLabel(record), compact: true),
+        trailing: StatusBadge(
+          _studentRequirementStatusLabel(record),
+          compact: true,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1664,7 +1733,8 @@ class _SubmissionDetail extends StatelessWidget {
             const SizedBox(height: 7),
             InkWell(
               borderRadius: BorderRadius.circular(8),
-              onTap: record != null &&
+              onTap:
+                  record != null &&
                       !{
                         ReviewStatus.needsRevision,
                         ReviewStatus.rejected,
@@ -1674,8 +1744,8 @@ class _SubmissionDetail extends StatelessWidget {
               child: Container(
                 height: 92,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFAFCFF),
-                  border: Border.all(color: const Color(0xFFBFD6F6)),
+                  color: AppTheme.surface,
+                  border: Border.all(color: AppTheme.borderStrong),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -1720,13 +1790,19 @@ class _SubmissionDetail extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 title: Text(
                   'Version ${record!.version}',
-                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 subtitle: Text(
                   'Submitted by ${record!.studentName}\n${DateFormat.yMMMd().add_jm().format(record!.submittedAt)}',
                   style: const TextStyle(fontSize: 9),
                 ),
-                trailing: StatusBadge(_studentRequirementStatusLabel(record), compact: true),
+                trailing: StatusBadge(
+                  _studentRequirementStatusLabel(record),
+                  compact: true,
+                ),
                 onTap: () => openStorageDocument(
                   context,
                   repository,
@@ -1758,61 +1834,125 @@ class _SubmissionDetail extends StatelessWidget {
       const SizedBox(height: 10),
       SectionCard(
         title: 'Upcoming Deadlines',
-        trailing: TextButton(onPressed: () {}, child: const Text('View All')),
+        trailing: TextButton(
+          onPressed: () => _showAllDeadlines(context),
+          child: const Text('View All'),
+        ),
         child: Column(
-          children: (allDefinitions
-                  .where(
-                    (item) =>
-                        item.dueDate.isAfter(DateTime.now()) &&
-                        item.id != definition.id,
+          children:
+              (allDefinitions
+                      .where(
+                        (item) =>
+                            item.dueDate.isAfter(DateTime.now()) &&
+                            item.id != definition.id,
+                      )
+                      .toList()
+                    ..sort((a, b) => a.dueDate.compareTo(b.dueDate)))
+                  .take(4)
+                  .map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceSoft,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              DateFormat(
+                                'MMM\ndd',
+                              ).format(item.dueDate).toUpperCase(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 8,
+                                height: 1.1,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              item.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   )
-                  .toList()
-                ..sort((a, b) => a.dueDate.compareTo(b.dueDate)))
-              .take(4)
-              .map(
-                (item) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF2F4F7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          DateFormat('MMM\ndd').format(item.dueDate).toUpperCase(),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 8,
-                            height: 1.1,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          item.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
+                  .toList(),
         ),
       ),
     ],
   );
+
+  Future<void> _showAllDeadlines(BuildContext context) async {
+    final upcoming =
+        allDefinitions
+            .where((item) => item.dueDate.isAfter(DateTime.now()))
+            .toList()
+          ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Upcoming Deadlines'),
+        content: SizedBox(
+          width: 560,
+          height: 420,
+          child: upcoming.isEmpty
+              ? const Center(child: Text('No upcoming deadlines.'))
+              : ListView.separated(
+                  itemCount: upcoming.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = upcoming[index];
+                    return ListTile(
+                      leading: Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceSoft,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          DateFormat(
+                            'MMM\ndd',
+                          ).format(item.dueDate).toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            height: 1.05,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      title: Text(item.title),
+                      subtitle: Text(item.description),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _pickAndUpload(BuildContext context) async {
     final file = await FilePicker.pickFile(
@@ -1842,9 +1982,9 @@ class _SubmissionDetail extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
@@ -1856,6 +1996,22 @@ class _SubmissionDetail extends StatelessWidget {
       webOnlyWindowName: '_blank',
     );
   }
+}
+
+class _SavedRepositoryView {
+  const _SavedRepositoryView({
+    required this.query,
+    required this.status,
+    required this.category,
+    required this.program,
+    required this.tab,
+  });
+
+  final String query;
+  final ReviewStatus? status;
+  final String category;
+  final String program;
+  final int tab;
 }
 
 class DocumentRepositoryScreen extends StatefulWidget {
@@ -1879,31 +2035,85 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
   String _program = 'All Programs';
   int _tab = 0;
   RequirementRecord? _selected;
+  _SavedRepositoryView? _savedView;
+  final _queryController = TextEditingController();
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  void _saveView() {
+    setState(() {
+      _savedView = _SavedRepositoryView(
+        query: _query,
+        status: _status,
+        category: _category,
+        program: _program,
+        tab: _tab,
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Current repository view saved for this session.'),
+      ),
+    );
+  }
+
+  void _restoreView() {
+    final saved = _savedView;
+    if (saved == null) return;
+    setState(() {
+      _query = saved.query;
+      _queryController.text = saved.query;
+      _status = saved.status;
+      _category = saved.category;
+      _program = saved.program;
+      _tab = saved.tab;
+      _selected = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saved repository view restored.')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Document Repository & Retrieval',
-    subtitle: 'Store, organize, search, preview, and retrieve internship documents.',
+    subtitle:
+        'Store, organize, search, preview, and retrieve internship documents.',
     eyebrow: 'Home  ›  Document Repository',
     actions: [
       OutlinedButton.icon(
-        onPressed: () {},
+        onPressed: _saveView,
         icon: const Icon(Icons.bookmark_add_outlined, size: 16),
         label: const Text('Save View'),
       ),
+      if (_savedView != null)
+        TextButton.icon(
+          onPressed: _restoreView,
+          icon: const Icon(Icons.restore_outlined, size: 16),
+          label: const Text('Restore View'),
+        ),
     ],
     child: StreamBuilder<List<RequirementRecord>>(
       stream: widget.repository.watchRequirements(widget.user),
       builder: (context, snapshot) {
         final all = snapshot.data ?? const <RequirementRecord>[];
-        final categories = {'All Categories', ...all.map((r) => r.category)}.toList();
+        final categories = {
+          'All Categories',
+          ...all.map((r) => r.category),
+        }.toList();
         final programs = {
           'All Programs',
           ...all.map((r) => r.program).whereType<String>(),
         }.toList();
         final tabFiltered = all.where((record) {
           return switch (_tab) {
-            1 => record.status == ReviewStatus.pending || record.status == ReviewStatus.underReview,
+            1 =>
+              record.status == ReviewStatus.pending ||
+                  record.status == ReviewStatus.underReview,
             2 => record.status == ReviewStatus.verified,
             3 => record.status == ReviewStatus.needsRevision,
             4 => record.archived,
@@ -1919,15 +2129,29 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
               (_category == 'All Categories' || record.category == _category) &&
               (_program == 'All Programs' || record.program == _program);
         }).toList();
-        final selected = _selected != null &&
+        final selected =
+            _selected != null &&
                 records.any((record) => record.id == _selected!.id)
             ? records.firstWhere((record) => record.id == _selected!.id)
             : records.firstOrNull;
         final counts = [
           all.where((r) => !r.archived).length,
-          all.where((r) => !r.archived && (r.status == ReviewStatus.pending || r.status == ReviewStatus.underReview)).length,
-          all.where((r) => !r.archived && r.status == ReviewStatus.verified).length,
-          all.where((r) => !r.archived && r.status == ReviewStatus.needsRevision).length,
+          all
+              .where(
+                (r) =>
+                    !r.archived &&
+                    (r.status == ReviewStatus.pending ||
+                        r.status == ReviewStatus.underReview),
+              )
+              .length,
+          all
+              .where((r) => !r.archived && r.status == ReviewStatus.verified)
+              .length,
+          all
+              .where(
+                (r) => !r.archived && r.status == ReviewStatus.needsRevision,
+              )
+              .length,
           all.where((r) => r.archived).length,
         ];
 
@@ -1952,17 +2176,21 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                   final list = Column(
                     children: [
                       _RepositoryFilters(
-                        queryChanged: (value) => setState(() => _query = value.toLowerCase()),
+                        queryController: _queryController,
+                        queryChanged: (value) =>
+                            setState(() => _query = value.toLowerCase()),
                         status: _status,
                         category: _category,
                         program: _program,
                         categories: categories,
                         programs: programs,
                         onStatus: (value) => setState(() => _status = value),
-                        onCategory: (value) => setState(() => _category = value),
+                        onCategory: (value) =>
+                            setState(() => _category = value),
                         onProgram: (value) => setState(() => _program = value),
                         onReset: () => setState(() {
                           _query = '';
+                          _queryController.clear();
                           _status = null;
                           _category = 'All Categories';
                           _program = 'All Programs';
@@ -1973,7 +2201,8 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                         child: _RepositoryList(
                           records: records,
                           selected: selected,
-                          onSelect: (record) => setState(() => _selected = record),
+                          onSelect: (record) =>
+                              setState(() => _selected = record),
                         ),
                       ),
                     ],
@@ -1997,7 +2226,8 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                           child: _RepositoryDirectory(
                             records: all,
                             activeCategory: _category,
-                            onCategory: (value) => setState(() => _category = value),
+                            onCategory: (value) =>
+                                setState(() => _category = value),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -2027,7 +2257,10 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                     children: [
                       Expanded(child: list),
                       const SizedBox(height: 10),
-                      SizedBox(height: 360, child: SingleChildScrollView(child: details)),
+                      SizedBox(
+                        height: 360,
+                        child: SingleChildScrollView(child: details),
+                      ),
                     ],
                   );
                 },
@@ -2042,6 +2275,7 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
 
 class _RepositoryFilters extends StatelessWidget {
   const _RepositoryFilters({
+    required this.queryController,
     required this.queryChanged,
     required this.status,
     required this.category,
@@ -2054,6 +2288,7 @@ class _RepositoryFilters extends StatelessWidget {
     required this.onReset,
   });
 
+  final TextEditingController queryController;
   final ValueChanged<String> queryChanged;
   final ReviewStatus? status;
   final String category;
@@ -2077,6 +2312,7 @@ class _RepositoryFilters extends StatelessWidget {
           SizedBox(
             width: 260,
             child: TextField(
+              controller: queryController,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search, size: 18),
                 hintText: 'Search by file name, student name/number, keyword…',
@@ -2087,11 +2323,17 @@ class _RepositoryFilters extends StatelessWidget {
           SizedBox(
             width: 145,
             child: DropdownButtonFormField<String>(
+              key: ValueKey('repository-program-$program'),
               isExpanded: true,
-              initialValue: programs.contains(program) ? program : 'All Programs',
+              initialValue: programs.contains(program)
+                  ? program
+                  : 'All Programs',
               decoration: const InputDecoration(labelText: 'Program'),
               items: programs
-                  .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                  .map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value)),
+                  )
                   .toList(),
               onChanged: (value) => onProgram(value ?? 'All Programs'),
             ),
@@ -2099,11 +2341,17 @@ class _RepositoryFilters extends StatelessWidget {
           SizedBox(
             width: 155,
             child: DropdownButtonFormField<String>(
+              key: ValueKey('repository-category-$category'),
               isExpanded: true,
-              initialValue: categories.contains(category) ? category : 'All Categories',
+              initialValue: categories.contains(category)
+                  ? category
+                  : 'All Categories',
               decoration: const InputDecoration(labelText: 'Document Category'),
               items: categories
-                  .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                  .map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value)),
+                  )
                   .toList(),
               onChanged: (value) => onCategory(value ?? 'All Categories'),
             ),
@@ -2111,9 +2359,12 @@ class _RepositoryFilters extends StatelessWidget {
           SizedBox(
             width: 145,
             child: DropdownButtonFormField<ReviewStatus?>(
+              key: ValueKey("repository-status-${status?.name ?? 'all'}"),
               isExpanded: true,
               initialValue: status,
-              decoration: const InputDecoration(labelText: 'Verification Status'),
+              decoration: const InputDecoration(
+                labelText: 'Verification Status',
+              ),
               items: [
                 const DropdownMenuItem<ReviewStatus?>(
                   value: null,
@@ -2179,7 +2430,10 @@ class _RepositoryDirectory extends StatelessWidget {
                   dense: true,
                   visualDensity: const VisualDensity(vertical: -3),
                   leading: const Icon(Icons.folder_outlined, size: 17),
-                  title: const Text('All Documents', style: TextStyle(fontSize: 10.5)),
+                  title: const Text(
+                    'All Documents',
+                    style: TextStyle(fontSize: 10.5),
+                  ),
                   selected: activeCategory == 'All Categories',
                   onTap: () => onCategory('All Categories'),
                 ),
@@ -2192,16 +2446,28 @@ class _RepositoryDirectory extends StatelessWidget {
                     leading: const Icon(Icons.folder_open_outlined, size: 16),
                     title: Text(
                       program.key,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     children: program.value.entries
                         .map(
                           (category) => ListTile(
                             dense: true,
                             visualDensity: const VisualDensity(vertical: -3),
-                            leading: const Icon(Icons.folder_outlined, size: 15),
-                            title: Text(category.key, style: const TextStyle(fontSize: 9.5)),
-                            trailing: Text('${category.value}', style: const TextStyle(fontSize: 8.5)),
+                            leading: const Icon(
+                              Icons.folder_outlined,
+                              size: 15,
+                            ),
+                            title: Text(
+                              category.key,
+                              style: const TextStyle(fontSize: 9.5),
+                            ),
+                            trailing: Text(
+                              '${category.value}',
+                              style: const TextStyle(fontSize: 8.5),
+                            ),
                             selected: activeCategory == category.key,
                             onTap: () => onCategory(category.key),
                           ),
@@ -2242,16 +2508,41 @@ class _RepositoryList extends StatelessWidget {
               Container(
                 height: 34,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                color: const Color(0xFFF8FAFC),
+                color: AppTheme.surfaceSoft,
                 child: const Row(
                   children: [
-                    SizedBox(width: 28, child: Icon(Icons.check_box_outline_blank, size: 14, color: AppTheme.muted)),
-                    Expanded(flex: 3, child: Text('File Name', style: _headerStyle)),
-                    Expanded(flex: 2, child: Text('Student', style: _headerStyle)),
-                    Expanded(flex: 2, child: Text('Program', style: _headerStyle)),
-                    Expanded(flex: 2, child: Text('Category', style: _headerStyle)),
-                    Expanded(flex: 2, child: Text('Status', style: _headerStyle)),
-                    Expanded(flex: 2, child: Text('Uploaded', style: _headerStyle)),
+                    SizedBox(
+                      width: 28,
+                      child: Icon(
+                        Icons.check_box_outline_blank,
+                        size: 14,
+                        color: AppTheme.muted,
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text('File Name', style: _headerStyle),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Student', style: _headerStyle),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Program', style: _headerStyle),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Category', style: _headerStyle),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Status', style: _headerStyle),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Uploaded', style: _headerStyle),
+                    ),
                     SizedBox(width: 30),
                   ],
                 ),
@@ -2267,34 +2558,73 @@ class _RepositoryList extends StatelessWidget {
                     return InkWell(
                       onTap: () => onSelect(record),
                       child: Container(
-                        color: active ? const Color(0xFFEFF6FF) : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                        color: active ? AppTheme.surfaceBlue : Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 9,
+                        ),
                         child: Row(
                           children: [
-                            const SizedBox(width: 28, child: Icon(Icons.check_box_outline_blank, size: 14, color: AppTheme.muted)),
+                            const SizedBox(
+                              width: 28,
+                              child: Icon(
+                                Icons.check_box_outline_blank,
+                                size: 14,
+                                color: AppTheme.muted,
+                              ),
+                            ),
                             Expanded(
                               flex: 3,
                               child: Row(
                                 children: [
-                                  const Icon(Icons.picture_as_pdf_outlined, size: 15, color: AppTheme.danger),
+                                  const Icon(
+                                    Icons.picture_as_pdf_outlined,
+                                    size: 15,
+                                    color: AppTheme.danger,
+                                  ),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       record.fileName ?? record.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 9.8, fontWeight: FontWeight.w600),
+                                      style: const TextStyle(
+                                        fontSize: 9.8,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                             Expanded(flex: 2, child: _cell(record.studentName)),
-                            Expanded(flex: 2, child: _cell(record.program ?? '—')),
+                            Expanded(
+                              flex: 2,
+                              child: _cell(record.program ?? '—'),
+                            ),
                             Expanded(flex: 2, child: _cell(record.category)),
-                            Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: StatusBadge(record.status.label, compact: true))),
-                            Expanded(flex: 2, child: _cell(shortDate(record.submittedAt))),
-                            const SizedBox(width: 30, child: Icon(Icons.more_horiz, size: 16, color: AppTheme.muted)),
+                            Expanded(
+                              flex: 2,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: StatusBadge(
+                                  record.status.label,
+                                  compact: true,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: _cell(shortDate(record.submittedAt)),
+                            ),
+                            const SizedBox(
+                              width: 30,
+                              child: Icon(
+                                Icons.more_horiz,
+                                size: 16,
+                                color: AppTheme.muted,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2312,10 +2642,16 @@ class _RepositoryList extends StatelessWidget {
                   children: [
                     Text(
                       '${records.length} document${records.length == 1 ? '' : 's'}',
-                      style: const TextStyle(fontSize: 9, color: AppTheme.muted),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppTheme.muted,
+                      ),
                     ),
                     const Spacer(),
-                    const Text('Rows per page  10', style: TextStyle(fontSize: 9, color: AppTheme.muted)),
+                    const Text(
+                      'Rows per page  10',
+                      style: TextStyle(fontSize: 9, color: AppTheme.muted),
+                    ),
                   ],
                 ),
               ),
@@ -2358,7 +2694,11 @@ class _RepositoryDetails extends StatelessWidget {
                 color: AppTheme.danger.withValues(alpha: .08),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(Icons.picture_as_pdf, color: AppTheme.danger, size: 24),
+              child: const Icon(
+                Icons.picture_as_pdf,
+                color: AppTheme.danger,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 9),
             Expanded(
@@ -2369,11 +2709,17 @@ class _RepositoryDetails extends StatelessWidget {
                     record.fileName ?? record.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   Text(
                     'PDF Document • Version ${record.version}',
-                    style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
+                    style: const TextStyle(
+                      fontSize: 8.8,
+                      color: AppTheme.muted,
+                    ),
                   ),
                 ],
               ),
@@ -2382,7 +2728,8 @@ class _RepositoryDetails extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: () => openStorageDocument(context, repository, record.storagePath),
+          onPressed: () =>
+              openStorageDocument(context, repository, record.storagePath),
           icon: const Icon(Icons.visibility_outlined, size: 15),
           label: const Text('Preview'),
         ),
@@ -2391,7 +2738,11 @@ class _RepositoryDetails extends StatelessWidget {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => openStorageDocument(context, repository, record.storagePath),
+                onPressed: () => openStorageDocument(
+                  context,
+                  repository,
+                  record.storagePath,
+                ),
                 icon: const Icon(Icons.download_outlined, size: 15),
                 label: const Text('Download'),
               ),
@@ -2399,7 +2750,11 @@ class _RepositoryDetails extends StatelessWidget {
             const SizedBox(width: 6),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => openStorageDocument(context, repository, record.storagePath),
+                onPressed: () => openStorageDocument(
+                  context,
+                  repository,
+                  record.storagePath,
+                ),
                 icon: const Icon(Icons.inventory_2_outlined, size: 15),
                 label: const Text('Retrieve'),
               ),
@@ -2408,7 +2763,7 @@ class _RepositoryDetails extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () {},
+          onPressed: () => _showVersionHistory(context),
           icon: const Icon(Icons.history, size: 15),
           label: const Text('View Version History'),
         ),
@@ -2429,7 +2784,13 @@ class _RepositoryDetails extends StatelessWidget {
           padding: const EdgeInsets.only(top: 3),
           child: Row(
             children: [
-              const SizedBox(width: 80, child: Text('Status', style: TextStyle(fontSize: 10, color: AppTheme.muted))),
+              const SizedBox(
+                width: 80,
+                child: Text(
+                  'Status',
+                  style: TextStyle(fontSize: 10, color: AppTheme.muted),
+                ),
+              ),
               StatusBadge(record.status.label, compact: true),
             ],
           ),
@@ -2443,7 +2804,11 @@ class _RepositoryDetails extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             record.remarks!,
-            style: const TextStyle(fontSize: 9.5, color: AppTheme.muted, height: 1.35),
+            style: const TextStyle(
+              fontSize: 9.5,
+              color: AppTheme.muted,
+              height: 1.35,
+            ),
           ),
         ],
         const Divider(height: 22),
@@ -2454,26 +2819,56 @@ class _RepositoryDetails extends StatelessWidget {
         StreamBuilder<List<RequirementVersionRecord>>(
           stream: repository.watchRequirementVersions(record.id),
           builder: (context, snapshot) {
-            final versions = snapshot.data ?? const <RequirementVersionRecord>[];
+            final versions =
+                snapshot.data ?? const <RequirementVersionRecord>[];
             return Column(
               children: [
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.circle, size: 8, color: AppTheme.blue),
-                  title: Text('v${record.version}', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700)),
-                  subtitle: Text('${shortDate(record.submittedAt)} • Current', style: const TextStyle(fontSize: 8.5)),
-                ),
-                ...versions.take(4).map(
-                  (version) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.circle_outlined, size: 8, color: AppTheme.muted),
-                    title: Text('v${version.version}', style: const TextStyle(fontSize: 9.5)),
-                    subtitle: Text(shortDate(version.submittedAt), style: const TextStyle(fontSize: 8.5)),
-                    onTap: () => openStorageDocument(context, repository, version.storagePath),
+                  leading: const Icon(
+                    Icons.circle,
+                    size: 8,
+                    color: AppTheme.blue,
+                  ),
+                  title: Text(
+                    'v${record.version}',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${shortDate(record.submittedAt)} • Current',
+                    style: const TextStyle(fontSize: 8.5),
                   ),
                 ),
+                ...versions
+                    .take(4)
+                    .map(
+                      (version) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(
+                          Icons.circle_outlined,
+                          size: 8,
+                          color: AppTheme.muted,
+                        ),
+                        title: Text(
+                          'v${version.version}',
+                          style: const TextStyle(fontSize: 9.5),
+                        ),
+                        subtitle: Text(
+                          shortDate(version.submittedAt),
+                          style: const TextStyle(fontSize: 8.5),
+                        ),
+                        onTap: () => openStorageDocument(
+                          context,
+                          repository,
+                          version.storagePath,
+                        ),
+                      ),
+                    ),
               ],
             );
           },
@@ -2481,6 +2876,95 @@ class _RepositoryDetails extends StatelessWidget {
       ],
     ),
   );
+
+  Future<void> _showVersionHistory(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Version History — ${record.title}'),
+        content: SizedBox(
+          width: 580,
+          height: 420,
+          child: StreamBuilder<List<RequirementVersionRecord>>(
+            stream: repository.watchRequirementVersions(record.id),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text(
+                    'Unable to load version history: ${snapshot.error}',
+                  ),
+                );
+              }
+              final versions =
+                  snapshot.data ?? const <RequirementVersionRecord>[];
+              return ListView(
+                children: [
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: AppTheme.surfaceBlue,
+                      foregroundColor: AppTheme.deepBlue,
+                      child: Text('v${record.version}'),
+                    ),
+                    title: Text(record.fileName ?? record.title),
+                    subtitle: Text(
+                      '${DateFormat.yMMMd().add_jm().format(record.submittedAt)} • Current',
+                    ),
+                    trailing: const Icon(Icons.open_in_new, size: 18),
+                    onTap: () => openStorageDocument(
+                      context,
+                      repository,
+                      record.storagePath,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  if (versions.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'No previous versions are available for this document.',
+                        style: TextStyle(color: AppTheme.muted),
+                      ),
+                    )
+                  else
+                    ...versions.map(
+                      (version) => ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.surfaceSoft,
+                          foregroundColor: AppTheme.muted,
+                          child: Text('v${version.version}'),
+                        ),
+                        title: Text(
+                          version.fileName.isEmpty
+                              ? record.title
+                              : version.fileName,
+                        ),
+                        subtitle: Text(
+                          DateFormat.yMMMd().add_jm().format(
+                            version.submittedAt,
+                          ),
+                        ),
+                        trailing: const Icon(Icons.open_in_new, size: 18),
+                        onTap: () => openStorageDocument(
+                          context,
+                          repository,
+                          version.storagePath,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class DocumentReviewScreen extends StatefulWidget {
@@ -2522,7 +3006,10 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
           'All Programs',
           ...all.map((record) => record.program).whereType<String>(),
         }.toList();
-        final types = {'All Document Types', ...all.map((record) => record.category)}.toList();
+        final types = {
+          'All Document Types',
+          ...all.map((record) => record.category),
+        }.toList();
         final records = all.where((record) {
           final haystack =
               '${record.studentName} ${record.studentNumber} ${record.title} ${record.fileName}'
@@ -2532,7 +3019,8 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
               (_program == 'All Programs' || record.program == _program) &&
               (_type == 'All Document Types' || record.category == _type);
         }).toList();
-        final selected = _selected != null &&
+        final selected =
+            _selected != null &&
                 records.any((record) => record.id == _selected!.id)
             ? records.firstWhere((record) => record.id == _selected!.id)
             : records.firstOrNull;
@@ -2549,24 +3037,43 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                       width: 175,
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
-                        initialValue: programs.contains(_program) ? _program : 'All Programs',
+                        initialValue: programs.contains(_program)
+                            ? _program
+                            : 'All Programs',
                         decoration: const InputDecoration(labelText: 'Program'),
                         items: programs
-                            .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
                             .toList(),
-                        onChanged: (value) => setState(() => _program = value ?? 'All Programs'),
+                        onChanged: (value) =>
+                            setState(() => _program = value ?? 'All Programs'),
                       ),
                     ),
                     SizedBox(
                       width: 180,
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
-                        initialValue: types.contains(_type) ? _type : 'All Document Types',
-                        decoration: const InputDecoration(labelText: 'Document Type'),
+                        initialValue: types.contains(_type)
+                            ? _type
+                            : 'All Document Types',
+                        decoration: const InputDecoration(
+                          labelText: 'Document Type',
+                        ),
                         items: types
-                            .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
                             .toList(),
-                        onChanged: (value) => setState(() => _type = value ?? 'All Document Types'),
+                        onChanged: (value) => setState(
+                          () => _type = value ?? 'All Document Types',
+                        ),
                       ),
                     ),
                     SizedBox(
@@ -2576,9 +3083,15 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                         initialValue: _status,
                         decoration: const InputDecoration(labelText: 'Status'),
                         items: [
-                          const DropdownMenuItem<ReviewStatus?>(value: null, child: Text('All Statuses')),
+                          const DropdownMenuItem<ReviewStatus?>(
+                            value: null,
+                            child: Text('All Statuses'),
+                          ),
                           ...ReviewStatus.values.map(
-                            (value) => DropdownMenuItem<ReviewStatus?>(value: value, child: Text(value.label)),
+                            (value) => DropdownMenuItem<ReviewStatus?>(
+                              value: value,
+                              child: Text(value.label),
+                            ),
                           ),
                         ],
                         onChanged: (value) => setState(() => _status = value),
@@ -2591,7 +3104,8 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                           prefixIcon: Icon(Icons.search, size: 18),
                           hintText: 'Search by student name, ID, or document…',
                         ),
-                        onChanged: (value) => setState(() => _query = value.toLowerCase()),
+                        onChanged: (value) =>
+                            setState(() => _query = value.toLowerCase()),
                       ),
                     ),
                     OutlinedButton.icon(
@@ -2630,14 +3144,18 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                           record: selected,
                           repository: widget.repository,
                           feedback: _feedback,
-                          onStatus: (status) => _saveStatus(context, selected, status),
+                          onStatus: (status) =>
+                              _saveStatus(context, selected, status),
                         );
                   if (constraints.maxWidth < 900) {
                     return Column(
                       children: [
                         Expanded(child: list),
                         const SizedBox(height: 9),
-                        SizedBox(height: 430, child: SingleChildScrollView(child: detail)),
+                        SizedBox(
+                          height: 430,
+                          child: SingleChildScrollView(child: detail),
+                        ),
                       ],
                     );
                   }
@@ -2704,14 +3222,26 @@ class _ReviewList extends StatelessWidget {
               Container(
                 height: 34,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                color: const Color(0xFFF8FAFC),
+                color: AppTheme.surfaceSoft,
                 child: const Row(
                   children: [
                     SizedBox(width: 28),
-                    Expanded(flex: 3, child: Text('Student Name', style: _reviewHeader)),
-                    Expanded(flex: 3, child: Text('Document', style: _reviewHeader)),
-                    Expanded(flex: 2, child: Text('Date Submitted', style: _reviewHeader)),
-                    Expanded(flex: 2, child: Text('Status', style: _reviewHeader)),
+                    Expanded(
+                      flex: 3,
+                      child: Text('Student Name', style: _reviewHeader),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text('Document', style: _reviewHeader),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Date Submitted', style: _reviewHeader),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Status', style: _reviewHeader),
+                    ),
                     SizedBox(width: 28),
                   ],
                 ),
@@ -2727,14 +3257,19 @@ class _ReviewList extends StatelessWidget {
                     return InkWell(
                       onTap: () => onSelect(record),
                       child: Container(
-                        color: active ? const Color(0xFFEFF6FF) : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        color: active ? AppTheme.surfaceBlue : Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                         child: Row(
                           children: [
                             SizedBox(
                               width: 28,
                               child: Icon(
-                                active ? Icons.check_box : Icons.check_box_outline_blank,
+                                active
+                                    ? Icons.check_box
+                                    : Icons.check_box_outline_blank,
                                 size: 14,
                                 color: active ? AppTheme.blue : AppTheme.muted,
                               ),
@@ -2744,15 +3279,48 @@ class _ReviewList extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(record.studentName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.8, fontWeight: FontWeight.w700)),
-                                  Text(record.studentNumber ?? '', style: const TextStyle(fontSize: 8.5, color: AppTheme.muted)),
+                                  Text(
+                                    record.studentName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 9.8,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    record.studentNumber ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 8.5,
+                                      color: AppTheme.muted,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
                             Expanded(flex: 3, child: _reviewCell(record.title)),
-                            Expanded(flex: 2, child: _reviewCell(shortDate(record.submittedAt))),
-                            Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: StatusBadge(record.status.label, compact: true))),
-                            const SizedBox(width: 28, child: Icon(Icons.more_horiz, size: 16, color: AppTheme.muted)),
+                            Expanded(
+                              flex: 2,
+                              child: _reviewCell(shortDate(record.submittedAt)),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: StatusBadge(
+                                  record.status.label,
+                                  compact: true,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(
+                              width: 28,
+                              child: Icon(
+                                Icons.more_horiz,
+                                size: 16,
+                                color: AppTheme.muted,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2888,7 +3456,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
   Widget _documentPreview(BuildContext context) => Container(
     height: 245,
     decoration: BoxDecoration(
-      color: const Color(0xFFF3F5F7),
+      color: AppTheme.surfaceSoft,
       border: Border.all(color: AppTheme.border),
       borderRadius: BorderRadius.circular(8),
     ),
@@ -2903,7 +3471,11 @@ class _ReviewDetailState extends State<_ReviewDetail> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.description_outlined, size: 14, color: AppTheme.muted),
+              const Icon(
+                Icons.description_outlined,
+                size: 14,
+                color: AppTheme.muted,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -2941,24 +3513,31 @@ class _ReviewDetailState extends State<_ReviewDetail> {
                     widget.record.title.toUpperCase(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  Container(height: 6, width: 170, color: const Color(0xFFE7EAF0)),
+                  Container(height: 6, width: 170, color: AppTheme.border),
                   const SizedBox(height: 7),
-                  Container(height: 5, width: double.infinity, color: const Color(0xFFEEF1F5)),
+                  Container(
+                    height: 5,
+                    width: double.infinity,
+                    color: AppTheme.border,
+                  ),
                   const SizedBox(height: 5),
-                  Container(height: 5, width: 210, color: const Color(0xFFEEF1F5)),
+                  Container(height: 5, width: 210, color: AppTheme.border),
                   const Spacer(),
                   Align(
                     alignment: Alignment.center,
                     child: OutlinedButton.icon(
                       onPressed: widget.record.storagePath?.isNotEmpty == true
                           ? () => openStorageDocument(
-                                context,
-                                widget.repository,
-                                widget.record.storagePath,
-                              )
+                              context,
+                              widget.repository,
+                              widget.record.storagePath,
+                            )
                           : null,
                       icon: const Icon(Icons.visibility_outlined, size: 14),
                       label: const Text('Open full document'),
@@ -2977,9 +3556,17 @@ class _ReviewDetailState extends State<_ReviewDetail> {
     children: [
       const _DetailHeading('Student Information'),
       InfoRow('Name', widget.record.studentName, labelWidth: 110),
-      InfoRow('Student ID', widget.record.studentNumber ?? '—', labelWidth: 110),
+      InfoRow(
+        'Student ID',
+        widget.record.studentNumber ?? '—',
+        labelWidth: 110,
+      ),
       InfoRow('Program', widget.record.program ?? '—', labelWidth: 110),
-      InfoRow('Institution', widget.record.institutionName ?? '—', labelWidth: 110),
+      InfoRow(
+        'Institution',
+        widget.record.institutionName ?? '—',
+        labelWidth: 110,
+      ),
     ],
   );
 
@@ -2989,7 +3576,11 @@ class _ReviewDetailState extends State<_ReviewDetail> {
       InfoRow('Document', widget.record.title, labelWidth: 110),
       InfoRow('File', widget.record.fileName ?? '—', labelWidth: 110),
       InfoRow('Category', widget.record.category, labelWidth: 110),
-      InfoRow('Submitted', shortDate(widget.record.submittedAt), labelWidth: 110),
+      InfoRow(
+        'Submitted',
+        shortDate(widget.record.submittedAt),
+        labelWidth: 110,
+      ),
       InfoRow('Due date', shortDate(widget.record.dueDate), labelWidth: 110),
       InfoRow('Version', 'v${widget.record.version}', labelWidth: 110),
       const SizedBox(height: 5),
@@ -3056,7 +3647,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
     margin: const EdgeInsets.only(bottom: 7),
     padding: const EdgeInsets.all(9),
     decoration: BoxDecoration(
-      color: current ? const Color(0xFFF4F8FF) : const Color(0xFFF8FAFC),
+      color: current ? AppTheme.surfaceBlue : AppTheme.surfaceSoft,
       border: Border.all(color: AppTheme.border),
       borderRadius: BorderRadius.circular(7),
     ),
@@ -3070,7 +3661,10 @@ class _ReviewDetailState extends State<_ReviewDetail> {
             children: [
               Text(
                 'Version $version${current ? ' • Current' : ''}',
-                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               Text(
                 fileName,
@@ -3085,8 +3679,17 @@ class _ReviewDetailState extends State<_ReviewDetail> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(shortDate(date), style: const TextStyle(fontSize: 8.5, color: AppTheme.muted)),
-            Text(status, style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700)),
+            Text(
+              shortDate(date),
+              style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
+            ),
+            Text(
+              status,
+              style: const TextStyle(
+                fontSize: 8.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ],
@@ -3100,11 +3703,19 @@ class _ReviewDetailState extends State<_ReviewDetail> {
         widget.record.remarks?.trim().isNotEmpty == true
             ? widget.record.remarks!
             : 'No coordinator feedback has been saved for this submission yet.',
-        style: const TextStyle(fontSize: 10.2, color: AppTheme.muted, height: 1.45),
+        style: const TextStyle(
+          fontSize: 10.2,
+          color: AppTheme.muted,
+          height: 1.45,
+        ),
       ),
       const SizedBox(height: 12),
       InfoRow('Reviewed by', widget.record.reviewedBy ?? '—', labelWidth: 110),
-      InfoRow('Reviewed on', shortDate(widget.record.reviewedAt), labelWidth: 110),
+      InfoRow(
+        'Reviewed on',
+        shortDate(widget.record.reviewedAt),
+        labelWidth: 110,
+      ),
     ],
   );
 

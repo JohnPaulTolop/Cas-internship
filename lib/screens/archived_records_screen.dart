@@ -28,14 +28,19 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
   String _recordType = 'All Records';
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<AcademicArchiveRecord>>(
+  Widget build(
+    BuildContext context,
+  ) => StreamBuilder<List<AcademicArchiveRecord>>(
     stream: widget.repository.watchAcademicArchives(),
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return Center(child: Text('Unable to load archives: ${snapshot.error}'));
+        return Center(
+          child: Text('Unable to load archives: ${snapshot.error}'),
+        );
       }
       final archives = snapshot.data ?? const <AcademicArchiveRecord>[];
-      final selected = _selectedArchive ?? (archives.isEmpty ? null : archives.first);
+      final selected =
+          _selectedArchive ?? (archives.isEmpty ? null : archives.first);
 
       return WorkflowPage(
         title: 'Archived Records',
@@ -71,7 +76,8 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
                                 style: const TextStyle(fontSize: 11),
                               ),
                               trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () => setState(() => _selectedArchive = archive),
+                              onTap: () =>
+                                  setState(() => _selectedArchive = archive),
                             ),
                           )
                           .toList(),
@@ -82,7 +88,8 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
                       ? const EmptyWorkflowState(
                           icon: Icons.folder_open_outlined,
                           title: 'Select an academic year',
-                          message: 'Choose an archive set to retrieve its records.',
+                          message:
+                              'Choose an archive set to retrieve its records.',
                         )
                       : _ArchiveDetail(
                           archive: selected,
@@ -90,7 +97,8 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
                           repository: widget.repository,
                           query: _query,
                           recordType: _recordType,
-                          onQueryChanged: (value) => setState(() => _query = value),
+                          onQueryChanged: (value) =>
+                              setState(() => _query = value),
                           onRecordTypeChanged: (value) =>
                               setState(() => _recordType = value),
                         );
@@ -107,7 +115,10 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(width: 310, child: SingleChildScrollView(child: archiveList)),
+                      SizedBox(
+                        width: 310,
+                        child: SingleChildScrollView(child: archiveList),
+                      ),
                       const SizedBox(width: 14),
                       Expanded(child: detail),
                     ],
@@ -143,7 +154,9 @@ class _ArchiveDetail extends StatelessWidget {
     future: repository.loadAcademicArchive(archive.academicYear, actor: user),
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return Center(child: Text('Unable to retrieve archive: ${snapshot.error}'));
+        return Center(
+          child: Text('Unable to retrieve archive: ${snapshot.error}'),
+        );
       }
       if (!snapshot.hasData) {
         return const Center(child: CircularProgressIndicator());
@@ -161,7 +174,10 @@ class _ArchiveDetail extends StatelessWidget {
       final dtr = contents.dtr.where((record) {
         if (needle.isEmpty) return true;
         return record.studentName.toLowerCase().contains(needle) ||
-            DateFormat.yMMMd().format(record.date).toLowerCase().contains(needle);
+            DateFormat.yMMMd()
+                .format(record.date)
+                .toLowerCase()
+                .contains(needle);
       }).toList();
       final evaluations = contents.evaluations.where((record) {
         if (needle.isEmpty) return true;
@@ -187,7 +203,8 @@ class _ArchiveDetail extends StatelessWidget {
                     onChanged: onQueryChanged,
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.search_rounded),
-                      hintText: 'Search student, program, document, company, or date',
+                      hintText:
+                          'Search student, program, document, company, or date',
                     ),
                   ),
                 ),
@@ -197,19 +214,23 @@ class _ArchiveDetail extends StatelessWidget {
                     isExpanded: true,
                     initialValue: recordType,
                     decoration: const InputDecoration(labelText: 'Record Type'),
-                    items: const [
-                      'All Records',
-                      'Documents',
-                      'DTR & Hours',
-                      'Supervisor Evaluations',
-                    ]
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value, overflow: TextOverflow.ellipsis),
-                          ),
-                        )
-                        .toList(),
+                    items:
+                        const [
+                              'All Records',
+                              'Documents',
+                              'DTR & Hours',
+                              'Supervisor Evaluations',
+                            ]
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(
+                                  value,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
                     onChanged: (value) {
                       if (value != null) onRecordTypeChanged(value);
                     },
@@ -220,62 +241,65 @@ class _ArchiveDetail extends StatelessWidget {
             const SizedBox(height: 14),
             if (recordType == 'All Records' || recordType == 'Documents')
               _ArchiveSection(
-              title: 'Documents',
-              count: requirements.length,
-              children: requirements
-                  .map(
-                    (record) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text(record.title),
-                      subtitle: Text(
-                        '${record.studentName} • ${record.category} • ${record.status.label}',
+                title: 'Documents',
+                count: requirements.length,
+                children: requirements
+                    .map(
+                      (record) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.description_outlined),
+                        title: Text(record.title),
+                        subtitle: Text(
+                          '${record.studentName} • ${record.category} • ${record.status.label}',
+                        ),
+                        trailing: record.storagePath == null
+                            ? null
+                            : IconButton(
+                                tooltip: 'Preview archived document',
+                                onPressed: () => _openDocument(context, record),
+                                icon: const Icon(Icons.open_in_new_rounded),
+                              ),
                       ),
-                      trailing: record.storagePath == null
-                          ? null
-                          : IconButton(
-                              tooltip: 'Preview archived document',
-                              onPressed: () => _openDocument(context, record),
-                              icon: const Icon(Icons.open_in_new_rounded),
-                            ),
-                    ),
-                  )
-                  .toList(),
-            ),
+                    )
+                    .toList(),
+              ),
             if (recordType == 'All Records' || recordType == 'DTR & Hours')
               _ArchiveSection(
-              title: 'Daily Time Records',
-              count: dtr.length,
-              children: dtr
-                  .map(
-                    (record) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.schedule_outlined),
-                      title: Text(record.studentName),
-                      subtitle: Text(
-                        '${DateFormat.yMMMd().format(record.date)} • ${record.renderedHours.toStringAsFixed(2)} approved hours',
+                title: 'Daily Time Records',
+                count: dtr.length,
+                children: dtr
+                    .map(
+                      (record) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.schedule_outlined),
+                        title: Text(record.studentName),
+                        subtitle: Text(
+                          '${DateFormat.yMMMd().format(record.date)} • ${record.renderedHours.toStringAsFixed(2)} approved hours',
+                        ),
                       ),
-                    ),
-                  )
-                  .toList(),
-            ),
-            if (recordType == 'All Records' || recordType == 'Supervisor Evaluations')
+                    )
+                    .toList(),
+              ),
+            if (recordType == 'All Records' ||
+                recordType == 'Supervisor Evaluations')
               _ArchiveSection(
-              title: 'Supervisor Evaluations',
-              count: evaluations.length,
-              children: evaluations
-                  .map(
-                    (record) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.assignment_turned_in_outlined),
-                      title: Text(record.studentName),
-                      subtitle: Text(
-                        '${record.companyName} • ${record.supervisorName} • ${record.status}',
+                title: 'Supervisor Evaluations',
+                count: evaluations.length,
+                children: evaluations
+                    .map(
+                      (record) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(
+                          Icons.assignment_turned_in_outlined,
+                        ),
+                        title: Text(record.studentName),
+                        subtitle: Text(
+                          '${record.companyName} • ${record.supervisorName} • ${record.status}',
+                        ),
                       ),
-                    ),
-                  )
-                  .toList(),
-            ),
+                    )
+                    .toList(),
+              ),
           ],
         ),
       );
@@ -293,9 +317,9 @@ class _ArchiveDetail extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }

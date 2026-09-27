@@ -34,13 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppTheme.background,
     body: Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FBFF), Color(0xFFEEF5FF), Color(0xFFF7F9FC)],
-        ),
-      ),
+      color: AppTheme.background,
       child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -135,11 +129,7 @@ class _LoginIntro extends StatelessWidget {
         SizedBox(height: 12),
         Text(
           'A clear, organized internship workspace for students, coordinators, and administrators.',
-          style: TextStyle(
-            color: AppTheme.muted,
-            fontSize: 14.5,
-            height: 1.5,
-          ),
+          style: TextStyle(color: AppTheme.muted, fontSize: 14.5, height: 1.5),
         ),
         SizedBox(height: 30),
         _FeatureLine(
@@ -248,18 +238,27 @@ class _LoginForm extends StatelessWidget {
               padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
                 color: AppTheme.danger.withValues(alpha: .07),
-                border: Border.all(color: AppTheme.danger.withValues(alpha: .20)),
+                border: Border.all(
+                  color: AppTheme.danger.withValues(alpha: .20),
+                ),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 19),
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: AppTheme.danger,
+                    size: 19,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       controller.error!,
-                      style: const TextStyle(fontSize: 12, color: AppTheme.text),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.text,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -461,7 +460,7 @@ class _StudentSignUpDialogState extends State<_StudentSignUpDialog> {
                   ),
                   child: Text(
                     _error!,
-                    style: const TextStyle(color: Colors.red),
+                    style: const TextStyle(color: AppTheme.danger),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -610,7 +609,8 @@ class _CoordinatorSignUpDialogState extends State<_CoordinatorSignUpDialog> {
     if (!success) {
       setState(() {
         _submitting = false;
-        _error = widget.controller.error ?? 'Program Coordinator request failed.';
+        _error =
+            widget.controller.error ?? 'Program Coordinator request failed.';
       });
       return;
     }

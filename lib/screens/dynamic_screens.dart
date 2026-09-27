@@ -205,7 +205,7 @@ class MoaScreen extends StatelessWidget {
                     Chip(
                       label: Text(item.isExpired ? 'Expired' : 'Active'),
                       backgroundColor:
-                          (item.isExpired ? Colors.red : Colors.green)
+                          (item.isExpired ? AppTheme.danger : AppTheme.success)
                               .withValues(alpha: 0.10),
                     ),
                     IconButton(
@@ -512,7 +512,8 @@ class PeopleScreen extends StatelessWidget {
                                   coordinator: null,
                                 )
                               : null,
-                          onActiveChanged: !studentsOnly &&
+                          onActiveChanged:
+                              !studentsOnly &&
                                   item.uid != user.uid &&
                                   item.approvalStatus == 'approved'
                               ? (active) async {
@@ -524,7 +525,9 @@ class PeopleScreen extends StatelessWidget {
                                     );
                                   } catch (error) {
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(content: Text('$error')),
                                       );
                                     }
@@ -596,9 +599,9 @@ class PeopleScreen extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
@@ -682,7 +685,9 @@ class _CoordinatorRequestPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height = (requests.length * 104.0 + 70).clamp(174.0, 360.0).toDouble();
+    final height = (requests.length * 104.0 + 70)
+        .clamp(174.0, 360.0)
+        .toDouble();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -940,10 +945,7 @@ class _AccountCard extends StatelessWidget {
                   children: [
                     _AccountStatusChip(item: item),
                     const SizedBox(width: 10),
-                    Switch(
-                      value: item.active,
-                      onChanged: onActiveChanged,
-                    ),
+                    Switch(value: item.active, onChanged: onActiveChanged),
                   ],
                 );
 
@@ -982,9 +984,17 @@ class _AccountStatusChip extends StatelessWidget {
         : !item.active
         ? ('Inactive', AppTheme.muted, Icons.pause_circle_outline)
         : item.role == UserRole.coordinator
-        ? ('Program Coordinator', AppTheme.success, Icons.verified_user_outlined)
+        ? (
+            'Program Coordinator',
+            AppTheme.success,
+            Icons.verified_user_outlined,
+          )
         : item.role == UserRole.admin
-        ? ('CAS College Coordinator / SIP Admin', AppTheme.blue, Icons.admin_panel_settings_outlined)
+        ? (
+            'CAS College Coordinator / SIP Admin',
+            AppTheme.blue,
+            Icons.admin_panel_settings_outlined,
+          )
         : ('Student', AppTheme.blue, Icons.school_outlined);
     return Chip(
       avatar: Icon(icon, size: 16, color: color),
@@ -1257,9 +1267,9 @@ class _Empty extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 7),
               Text(

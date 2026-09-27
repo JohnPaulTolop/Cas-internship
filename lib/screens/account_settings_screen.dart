@@ -37,10 +37,7 @@ class AccountSettingsScreen extends StatelessWidget {
                   if (user.program?.isNotEmpty == true)
                     _SettingsRow(label: 'Program', value: user.program!),
                   if (user.department?.isNotEmpty == true)
-                    _SettingsRow(
-                      label: 'Department',
-                      value: user.department!,
-                    ),
+                    _SettingsRow(label: 'Department', value: user.department!),
                   if (user.academicYear?.isNotEmpty == true)
                     _SettingsRow(
                       label: 'Academic Year',
@@ -120,11 +117,7 @@ class AccountSettingsScreen extends StatelessWidget {
 
             if (stacked) {
               return Column(
-                children: [
-                  account,
-                  const SizedBox(height: 12),
-                  preferences,
-                ],
+                children: [account, const SizedBox(height: 12), preferences],
               );
             }
             return Row(
@@ -146,9 +139,7 @@ class AccountSettingsScreen extends StatelessWidget {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: user.email);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Password reset email sent to ${user.email}.'),
-        ),
+        SnackBar(content: Text('Password reset email sent to ${user.email}.')),
       );
     } on FirebaseAuthException catch (error) {
       if (!context.mounted) return;
