@@ -35,24 +35,27 @@ void main() {
     });
   });
 
-  test('student uses Requirements Checklist without a duplicate repository tab', () {
-    expect(RoleAccess.forRole(UserRole.student), {
-      AppFeature.dashboard,
-      AppFeature.statusTracker,
-      AppFeature.requirements,
-      AppFeature.dtr,
-      AppFeature.notifications,
-      AppFeature.settings,
-    });
+  test(
+    'student uses Requirements Checklist without a duplicate repository tab',
+    () {
+      expect(RoleAccess.forRole(UserRole.student), {
+        AppFeature.dashboard,
+        AppFeature.statusTracker,
+        AppFeature.requirements,
+        AppFeature.dtr,
+        AppFeature.notifications,
+        AppFeature.settings,
+      });
 
-    expect(
-      RoleAccess.canAccess(UserRole.student, AppFeature.repository),
-      isFalse,
-    );
+      expect(
+        RoleAccess.canAccess(UserRole.student, AppFeature.repository),
+        isFalse,
+      );
 
-    expect(
-      RoleAccess.canAccess(UserRole.student, AppFeature.requirements),
-      isTrue,
-    );
-  });
+      expect(
+        RoleAccess.canAccess(UserRole.student, AppFeature.requirements),
+        isTrue,
+      );
+    },
+  );
 }
