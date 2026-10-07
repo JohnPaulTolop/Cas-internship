@@ -61,6 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             preferredSize: const Size.fromHeight(72),
             child: _TopBar(
               user: user,
+              repository: widget.controller.repository,
               desktop: desktop,
               onSearch: _openGlobalSearch,
               onNotifications:
@@ -392,6 +393,7 @@ class _GlobalSearchResult {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.user,
+    required this.repository,
     required this.desktop,
     required this.onSearch,
     required this.onNotifications,
@@ -399,6 +401,7 @@ class _TopBar extends StatelessWidget {
   });
 
   final AppUser user;
+  final PracticumRepository repository;
   final bool desktop;
   final VoidCallback onSearch;
   final VoidCallback? onNotifications;
@@ -461,11 +464,73 @@ class _TopBar extends StatelessWidget {
                 onPressed: onSearch,
                 icon: const Icon(Icons.search_rounded, size: 22),
               ),
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: onNotifications,
-              icon: const Icon(Icons.notifications_none_rounded, size: 22),
-            ),
+            if (user.role == UserRole.student ||
+                user.role == UserRole.coordinator)
+              StreamBuilder<List<NotificationRecord>>(
+                stream: repository.watchNotifications(user),
+                builder: (context, snapshot) {
+                  final unreadCount =
+                      (snapshot.data ?? const <NotificationRecord>[])
+                          .where((notice) => !notice.isReadBy(user.uid))
+                          .length;
+
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        tooltip: unreadCount > 0
+                            ? 'Notifications ($unreadCount unread)'
+                            : 'Notifications',
+                        onPressed: onNotifications,
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                          size: 22,
+                        ),
+                      ),
+                      if (unreadCount > 0)
+                        Positioned(
+                          top: 3,
+                          right: 1,
+                          child: IgnorePointer(
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                              ),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: AppTheme.danger,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Text(
+                                unreadCount > 99 ? '99+' : '$unreadCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              )
+            else
+              IconButton(
+                tooltip: 'Notifications',
+                onPressed: onNotifications,
+                icon: const Icon(Icons.notifications_none_rounded, size: 22),
+              ),
             const SizedBox(width: 6),
             PopupMenuButton<String>(
               tooltip: 'Account menu',
