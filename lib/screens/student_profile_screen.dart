@@ -124,7 +124,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
       .join();
 }
 
-class StudentInternshipProfileScreen extends StatelessWidget {
+class StudentInternshipProfileScreen extends StatefulWidget {
   const StudentInternshipProfileScreen({
     super.key,
     required this.actor,
@@ -135,6 +135,19 @@ class StudentInternshipProfileScreen extends StatelessWidget {
   final AppUser actor;
   final AppUser student;
   final PracticumRepository repository;
+
+  @override
+  State<StudentInternshipProfileScreen> createState() =>
+      _StudentInternshipProfileScreenState();
+}
+
+class _StudentInternshipProfileScreenState
+    extends State<StudentInternshipProfileScreen> {
+  int _selectedTab = 0;
+
+  AppUser get actor => widget.actor;
+  AppUser get student => widget.student;
+  PracticumRepository get repository => widget.repository;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<InternshipProfileRecord?>(
@@ -181,64 +194,113 @@ class StudentInternshipProfileScreen extends StatelessWidget {
                 ],
                 child: ListView(
                   children: [
-                    _ProfileHeader(student: student, profile: profile),
-                    const SizedBox(height: 14),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final wide = constraints.maxWidth >= 920;
-                        final main = Column(
-                          children: [
-                            _InternshipDetails(
-                              profile: profile,
-                              coordinatorName: student.coordinatorName,
-                            ),
-                            const SizedBox(height: 14),
-                            _ProgressCard(
-                              completedHours: hours,
-                              requiredHours: profile.requiredHours,
-                            ),
-                            const SizedBox(height: 14),
-                            _RecentActivity(
-                              student: student,
-                              repository: repository,
-                            ),
-                          ],
-                        );
-                        final side = Column(
-                          children: [
-                            _RequiredDocuments(records: requirements),
-                            const SizedBox(height: 14),
-                            _QuickActions(
-                              profile: profile,
-                              actor: actor,
-                              student: student,
-                              repository: repository,
-                              onEdit: () => _editProfile(context, profile),
-                              onAssignCoordinator: actor.role == UserRole.admin
-                                  ? () => _showCoordinatorAssignment(context)
-                                  : null,
-                              onRemoveCoordinator:
-                                  actor.role == UserRole.admin &&
-                                      student.coordinatorId != null
-                                  ? () => _removeCoordinatorAssignment(context)
-                                  : null,
-                            ),
-                          ],
-                        );
-                        if (!wide) {
-                          return Column(
-                            children: [main, const SizedBox(height: 14), side],
-                          );
+                    _ProfileHeader(
+                      student: student,
+                      profile: profile,
+                      selectedTab: _selectedTab,
+                      onTabSelected: (index) {
+                        if (_selectedTab != index) {
+                          setState(() => _selectedTab = index);
                         }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 2, child: main),
-                            const SizedBox(width: 14),
-                            Expanded(child: side),
-                          ],
-                        );
                       },
+                    ),
+                    const SizedBox(height: 14),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: KeyedSubtree(
+                        key: ValueKey(_selectedTab),
+                        child: switch (_selectedTab) {
+                          0 => LayoutBuilder(
+                            builder: (context, constraints) {
+                              final wide = constraints.maxWidth >= 920;
+
+                              final main = Column(
+                                children: [
+                                  _InternshipDetails(
+                                    profile: profile,
+                                    coordinatorName: student.coordinatorName,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _ProgressCard(
+                                    completedHours: hours,
+                                    requiredHours: profile.requiredHours,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _RecentActivity(
+                                    student: student,
+                                    repository: repository,
+                                  ),
+                                ],
+                              );
+
+                              final side = Column(
+                                children: [
+                                  _RequiredDocuments(records: requirements),
+                                  const SizedBox(height: 14),
+                                  _QuickActions(
+                                    profile: profile,
+                                    actor: actor,
+                                    student: student,
+                                    repository: repository,
+                                    onEdit: () =>
+                                        _editProfile(context, profile),
+                                    onAssignCoordinator:
+                                        actor.role == UserRole.admin
+                                        ? () => _showCoordinatorAssignment(
+                                            context,
+                                          )
+                                        : null,
+                                    onRemoveCoordinator:
+                                        actor.role == UserRole.admin &&
+                                            student.coordinatorId != null
+                                        ? () => _removeCoordinatorAssignment(
+                                            context,
+                                          )
+                                        : null,
+                                  ),
+                                ],
+                              );
+
+                              if (!wide) {
+                                return Column(
+                                  children: [
+                                    main,
+                                    const SizedBox(height: 14),
+                                    side,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(flex: 2, child: main),
+                                  const SizedBox(width: 14),
+                                  Expanded(child: side),
+                                ],
+                              );
+                            },
+                          ),
+
+                          1 => _DocumentsTab(records: requirements),
+
+                          2 => _EvaluationTab(
+                            actor: actor,
+                            student: student,
+                            repository: repository,
+                          ),
+
+                          3 => _AttendanceTab(
+                            records: dtr,
+                            completedHours: hours,
+                            requiredHours: profile.requiredHours,
+                          ),
+
+                          4 => _RemarksTab(remarks: profile.coordinatorRemarks),
+
+                          _ => const SizedBox.shrink(),
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -619,9 +681,17 @@ class StudentInternshipProfileScreen extends StatelessWidget {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.student, required this.profile});
+  const _ProfileHeader({
+    required this.student,
+    required this.profile,
+    required this.selectedTab,
+    required this.onTabSelected,
+  });
+
   final AppUser student;
   final InternshipProfileRecord profile;
+  final int selectedTab;
+  final ValueChanged<int> onTabSelected;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -720,9 +790,15 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ),
         const Divider(height: 1),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10),
-          child: Align(alignment: Alignment.centerLeft, child: _ProfileTabs()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _ProfileTabs(
+              selectedIndex: selectedTab,
+              onSelected: onTabSelected,
+            ),
+          ),
         ),
       ],
     ),
@@ -730,43 +806,282 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 class _ProfileTabs extends StatelessWidget {
-  const _ProfileTabs();
+  const _ProfileTabs({required this.selectedIndex, required this.onSelected});
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  static const _labels = [
+    'Overview',
+    'Documents',
+    'Evaluation',
+    'Attendance',
+    'Remarks',
+  ];
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: const [
-      _ProfileTab('Overview', active: true),
-      _ProfileTab('Documents'),
-      _ProfileTab('Evaluation'),
-      _ProfileTab('Attendance'),
-      _ProfileTab('Remarks'),
-    ],
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        _labels.length,
+        (index) => _ProfileTab(
+          _labels[index],
+          active: selectedIndex == index,
+          onTap: () => onSelected(index),
+        ),
+      ),
+    ),
   );
 }
 
 class _ProfileTab extends StatelessWidget {
-  const _ProfileTab(this.label, {this.active = false});
+  const _ProfileTab(this.label, {required this.onTap, this.active = false});
+
   final String label;
   final bool active;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    decoration: BoxDecoration(
-      border: Border(
-        bottom: BorderSide(
-          width: 2,
-          color: active ? AppTheme.blue : Colors.transparent,
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              width: 2,
+              color: active ? AppTheme.blue : Colors.transparent,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? AppTheme.blue : AppTheme.muted,
+            fontSize: 9.5,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ),
     ),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: active ? AppTheme.blue : AppTheme.muted,
-        fontSize: 9.5,
-        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+  );
+}
+
+class _DocumentsTab extends StatelessWidget {
+  const _DocumentsTab({required this.records});
+
+  final List<RequirementRecord> records;
+
+  @override
+  Widget build(BuildContext context) => _RequiredDocuments(records: records);
+}
+
+class _EvaluationTab extends StatelessWidget {
+  const _EvaluationTab({
+    required this.actor,
+    required this.student,
+    required this.repository,
+  });
+
+  final AppUser actor;
+  final AppUser student;
+  final PracticumRepository repository;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!actor.role.isStaff) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Supervisor evaluation details are available only to authorized staff.',
+          ),
+        ),
+      );
+    }
+
+    return StreamBuilder<List<SupervisorEvaluationRecord>>(
+      stream: repository.watchEvaluationsFor(actor),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('${snapshot.error}'),
+            ),
+          );
+        }
+
+        final evaluations =
+            (snapshot.data ?? const <SupervisorEvaluationRecord>[])
+                .where((item) => item.studentId == student.uid)
+                .toList();
+
+        if (evaluations.isEmpty) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: EmptyWorkflowState(
+                icon: Icons.assignment_turned_in_outlined,
+                title: 'No supervisor evaluation yet',
+                message:
+                    'Supervisor evaluation records for this intern will appear here.',
+              ),
+            ),
+          );
+        }
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Supervisor Evaluation',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${evaluations.length} evaluation record'
+                  '${evaluations.length == 1 ? '' : 's'} found.',
+                  style: const TextStyle(color: AppTheme.muted),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Open Supervisor Evaluations for the complete confidential evaluation details.',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AttendanceTab extends StatelessWidget {
+  const _AttendanceTab({
+    required this.records,
+    required this.completedHours,
+    required this.requiredHours,
+  });
+
+  final List<DtrRecord> records;
+  final double completedHours;
+  final int requiredHours;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      _ProgressCard(
+        completedHours: completedHours,
+        requiredHours: requiredHours,
+      ),
+      const SizedBox(height: 14),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: records.isEmpty
+              ? const EmptyWorkflowState(
+                  icon: Icons.punch_clock_outlined,
+                  title: 'No attendance records',
+                  message:
+                      'Daily Time Record entries for this intern will appear here.',
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Attendance / DTR Records',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Date')),
+                          DataColumn(label: Text('Time In')),
+                          DataColumn(label: Text('Time Out')),
+                          DataColumn(label: Text('Hours')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Remarks')),
+                        ],
+                        rows: records
+                            .map(
+                              (item) => DataRow(
+                                cells: [
+                                  DataCell(
+                                    Text(DateFormat.yMMMd().format(item.date)),
+                                  ),
+                                  DataCell(
+                                    Text(DateFormat.jm().format(item.timeIn)),
+                                  ),
+                                  DataCell(
+                                    Text(DateFormat.jm().format(item.timeOut)),
+                                  ),
+                                  DataCell(
+                                    Text(item.renderedHours.toStringAsFixed(2)),
+                                  ),
+                                  DataCell(Text(item.status.label)),
+                                  DataCell(Text(item.remarks ?? '—')),
+                                ],
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _RemarksTab extends StatelessWidget {
+  const _RemarksTab({required this.remarks});
+
+  final String remarks;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.chat_bubble_outline_rounded, color: AppTheme.blue),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Coordinator Remarks',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  remarks.trim().isEmpty
+                      ? 'No coordinator remarks have been added yet.'
+                      : remarks,
+                  style: const TextStyle(color: AppTheme.muted, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     ),
   );
@@ -800,6 +1115,7 @@ class _HeaderValue extends StatelessWidget {
 class _InternshipDetails extends StatelessWidget {
   const _InternshipDetails({required this.profile, this.coordinatorName});
   final InternshipProfileRecord profile;
+
   final String? coordinatorName;
 
   @override
@@ -972,6 +1288,7 @@ class _RecentActivity extends StatelessWidget {
 class _QuickActions extends StatelessWidget {
   const _QuickActions({
     required this.profile,
+
     required this.actor,
     required this.student,
     required this.repository,
@@ -981,6 +1298,7 @@ class _QuickActions extends StatelessWidget {
   });
 
   final InternshipProfileRecord profile;
+
   final AppUser actor;
   final AppUser student;
   final PracticumRepository repository;

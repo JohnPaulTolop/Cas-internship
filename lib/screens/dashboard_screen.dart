@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
@@ -18,6 +20,15 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   AppFeature _selected = AppFeature.dashboard;
+  late final Stream<List<NotificationRecord>> _notificationStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationStream = widget.controller.repository.watchNotifications(
+      widget.controller.user!,
+    );
+  }
 
   Future<void> _openGlobalSearch() async {
     final user = widget.controller.user!;
@@ -61,7 +72,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             preferredSize: const Size.fromHeight(72),
             child: _TopBar(
               user: user,
-              repository: widget.controller.repository,
+              notificationStream: _notificationStream,
               desktop: desktop,
               onSearch: _openGlobalSearch,
               onNotifications:
@@ -205,7 +216,7 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
           _GlobalSearchResult(
             title: student.displayName,
             subtitle:
-                '${student.studentNumber ?? 'No student number'} • '
+                '${student.studentNumber ?? 'No student number'} â€¢ '
                 '${student.program ?? 'Program not set'}',
             icon: Icons.person_outline,
             feature: AppFeature.students,
@@ -230,8 +241,8 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
           _GlobalSearchResult(
             title: record.title,
             subtitle: widget.user.role == UserRole.student
-                ? '${record.category} • ${record.status.label}'
-                : '${record.studentName} • ${record.status.label}',
+                ? '${record.category} â€¢ ${record.status.label}'
+                : '${record.studentName} â€¢ ${record.status.label}',
             icon: Icons.description_outlined,
             feature: widget.user.role == UserRole.student
                 ? AppFeature.requirements
@@ -259,7 +270,7 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
             subtitle: [
               partner.industryField,
               partner.contactName,
-            ].where((value) => value.isNotEmpty).join(' • '),
+            ].where((value) => value.isNotEmpty).join(' â€¢ '),
             icon: Icons.business_outlined,
             feature: AppFeature.moa,
           ),
@@ -393,7 +404,7 @@ class _GlobalSearchResult {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.user,
-    required this.repository,
+    required this.notificationStream,
     required this.desktop,
     required this.onSearch,
     required this.onNotifications,
@@ -401,7 +412,7 @@ class _TopBar extends StatelessWidget {
   });
 
   final AppUser user;
-  final PracticumRepository repository;
+  final Stream<List<NotificationRecord>> notificationStream;
   final bool desktop;
   final VoidCallback onSearch;
   final VoidCallback? onNotifications;
@@ -467,7 +478,7 @@ class _TopBar extends StatelessWidget {
             if (user.role == UserRole.student ||
                 user.role == UserRole.coordinator)
               StreamBuilder<List<NotificationRecord>>(
-                stream: repository.watchNotifications(user),
+                stream: notificationStream,
                 builder: (context, snapshot) {
                   final unreadCount =
                       (snapshot.data ?? const <NotificationRecord>[])
@@ -478,7 +489,9 @@ class _TopBar extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       IconButton(
-                        tooltip: unreadCount > 0
+                        tooltip: snapshot.hasError
+                            ? 'Notification loading error (open for details)'
+                            : unreadCount > 0
                             ? 'Notifications ($unreadCount unread)'
                             : 'Notifications',
                         onPressed: onNotifications,
@@ -487,7 +500,10 @@ class _TopBar extends StatelessWidget {
                           size: 22,
                         ),
                       ),
-                      if (unreadCount > 0)
+                      if (snapshot.hasError ||
+                          unreadCount > 0 ||
+                          (user.role == UserRole.coordinator &&
+                              snapshot.hasData))
                         Positioned(
                           top: 3,
                           right: 1,
@@ -510,7 +526,11 @@ class _TopBar extends StatelessWidget {
                                 ),
                               ),
                               child: Text(
-                                unreadCount > 99 ? '99+' : '$unreadCount',
+                                snapshot.hasError
+                                    ? '!'
+                                    : unreadCount > 99
+                                    ? '99+'
+                                    : '$unreadCount',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 9,

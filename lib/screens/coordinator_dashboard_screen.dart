@@ -284,6 +284,39 @@ class _CoordinatorDashboardScreenState
                                     _RecentSubmissions(
                                       requirements: requirements,
                                       onViewAll: _openDocumentReview,
+                                      onView: (record) {
+                                        final match = allStudents.where(
+                                          (student) =>
+                                              student.uid == record.studentId,
+                                        );
+
+                                        if (match.isEmpty) return;
+
+                                        final selectedStudent = match.first;
+
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => Scaffold(
+                                              appBar: AppBar(
+                                                title: const Text(
+                                                  'Student Internship Profile',
+                                                ),
+                                              ),
+                                              body: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(18),
+                                                child:
+                                                    StudentInternshipProfileScreen(
+                                                  actor: widget.user,
+                                                  student: selectedStudent,
+                                                  repository:
+                                                      widget.repository,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                       onSelect: (record) {
                                         final match = allStudents.where(
                                           (student) =>
@@ -488,11 +521,13 @@ class _RecentSubmissions extends StatelessWidget {
   const _RecentSubmissions({
     required this.requirements,
     required this.onSelect,
+    required this.onView,
     required this.onViewAll,
   });
 
   final List<RequirementRecord> requirements;
   final ValueChanged<RequirementRecord> onSelect;
+  final ValueChanged<RequirementRecord> onView;
   final VoidCallback onViewAll;
 
   @override
@@ -571,7 +606,7 @@ class _RecentSubmissions extends StatelessWidget {
                           SizedBox(
                             width: 44,
                             child: TextButton(
-                              onPressed: () => onSelect(record),
+                              onPressed: () => onView(record),
                               child: const Text(
                                 'View',
                                 style: TextStyle(fontSize: 8.5),

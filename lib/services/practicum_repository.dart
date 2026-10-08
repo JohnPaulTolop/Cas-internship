@@ -127,7 +127,12 @@ class PracticumRepository {
 
       final records =
           merged.values
-              .where((record) => record.active && record.isDue)
+              .where(
+                (record) =>
+                    record.active &&
+                    record.isDue &&
+                    !record.isDismissedBy(user.uid),
+              )
               .toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -1160,6 +1165,25 @@ class PracticumRepository {
     });
   }
 
+  Future<void> dismissNotificationForUser({
+    required AppUser user,
+    required NotificationRecord notification,
+  }) async {
+    if (user.role == UserRole.admin) {
+      throw StateError(
+        'Use the administrative notification controls for admin deletion.',
+      );
+    }
+
+    if (notification.isDismissedBy(user.uid)) {
+      return;
+    }
+
+    await _db.collection('notifications').doc(notification.id).update({
+      'dismissedBy': FieldValue.arrayUnion([user.uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
   Future<void> saveInternshipProfile({
     required AppUser actor,
     required AppUser student,

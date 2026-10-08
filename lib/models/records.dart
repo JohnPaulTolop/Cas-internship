@@ -177,6 +177,7 @@ class NotificationRecord {
     this.linkUrl,
     this.createdBy,
     this.readBy = const [],
+    this.dismissedBy = const [],
   });
 
   final String id;
@@ -194,11 +195,14 @@ class NotificationRecord {
   final String? linkUrl;
   final String? createdBy;
   final List<String> readBy;
+  final List<String> dismissedBy;
 
   bool get isDue =>
       scheduledFor == null || !scheduledFor!.isAfter(DateTime.now());
 
   bool isReadBy(String userId) => read || readBy.contains(userId);
+
+  bool isDismissedBy(String userId) => dismissedBy.contains(userId);
 
   factory NotificationRecord.fromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -220,6 +224,9 @@ class NotificationRecord {
       linkUrl: data['linkUrl'] as String?,
       createdBy: data['createdBy'] as String?,
       readBy: (data['readBy'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
+      dismissedBy: (data['dismissedBy'] as List<dynamic>? ?? const [])
           .whereType<String>()
           .toList(),
     );

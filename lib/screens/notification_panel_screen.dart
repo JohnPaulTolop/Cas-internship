@@ -31,6 +31,81 @@ class _StudentNotificationPanelScreenState
   int _tab = 0;
   NotificationRecord? _selected;
 
+  Future<void> _openNotification(NotificationRecord notice) async {
+    setState(() => _selected = notice);
+
+    if (!notice.isReadBy(widget.user.uid)) {
+      await widget.repository.markNotificationRead(
+        user: widget.user,
+        notification: notice,
+      );
+    }
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _NotificationDetailPage(
+          user: widget.user,
+          notice: notice,
+          repository: widget.repository,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteNotificationForMe(NotificationRecord notice) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete notification?'),
+        content: Text(
+          'Remove "${notice.title}" from your notifications? '
+          'This only removes it from your account.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await widget.repository.dismissNotificationForUser(
+        user: widget.user,
+        notification: notice,
+      );
+
+      if (!mounted) return;
+
+      if (_selected?.id == notice.id) {
+        setState(() => _selected = null);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification removed from your account.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to delete notification: $error'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NotificationRecord>>(
     stream: widget.repository.watchNotifications(widget.user),
@@ -223,15 +298,9 @@ class _StudentNotificationPanelScreenState
                     records: records,
                     user: widget.user,
                     selected: selected,
-                    onSelect: (notice) async {
-                      setState(() => _selected = notice);
-                      if (!notice.isReadBy(widget.user.uid)) {
-                        await widget.repository.markNotificationRead(
-                          user: widget.user,
-                          notification: notice,
-                        );
-                      }
-                    },
+                    onSelect: _openNotification,
+                    onView: _openNotification,
+                    onDelete: _deleteNotificationForMe,
                   );
                   final details = selected == null
                       ? const EmptyWorkflowState(
@@ -284,12 +353,16 @@ class _NotificationList extends StatelessWidget {
     required this.user,
     required this.selected,
     required this.onSelect,
+    required this.onView,
+    required this.onDelete,
   });
 
   final List<NotificationRecord> records;
   final AppUser user;
   final NotificationRecord? selected;
   final ValueChanged<NotificationRecord> onSelect;
+  final ValueChanged<NotificationRecord> onView;
+  final ValueChanged<NotificationRecord> onDelete;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -388,10 +461,57 @@ class _NotificationList extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 5),
-                      const Icon(
-                        Icons.more_horiz,
-                        size: 16,
-                        color: AppTheme.muted,
+                      PopupMenuButton<String>(
+                        tooltip: 'Notification actions',
+                        icon: const Icon(
+                          Icons.more_horiz,
+                          size: 16,
+                          color: AppTheme.muted,
+                        ),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'view':
+                              onView(notice);
+                              break;
+                            case 'delete':
+                              onDelete(notice);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'view',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.visibility_outlined,
+                                  size: 18,
+                                ),
+                                SizedBox(width: 10),
+                                Text('View'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                  color: AppTheme.danger,
+                                ),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Delete',
+                                  style: TextStyle(
+                                    color: AppTheme.danger,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -402,6 +522,54 @@ class _NotificationList extends StatelessWidget {
   );
 }
 
+class _NotificationDetailPage extends StatelessWidget {
+  const _NotificationDetailPage({
+    required this.user,
+    required this.notice,
+    required this.repository,
+  });
+
+  final AppUser user;
+  final NotificationRecord notice;
+  final PracticumRepository repository;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppTheme.background,
+    appBar: AppBar(
+      title: const Text('Notification'),
+    ),
+    body: SafeArea(
+      child: StreamBuilder<List<NotificationRecord>>(
+        stream: repository.watchNotifications(user),
+        builder: (context, snapshot) {
+          final records =
+              snapshot.data ?? const <NotificationRecord>[];
+
+          final current = records
+              .where((item) => item.id == notice.id)
+              .firstOrNull;
+
+          final shownNotice = current ?? notice;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(18),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: _NotificationDetails(
+                  user: user,
+                  notice: shownNotice,
+                  repository: repository,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
 class _NotificationDetails extends StatelessWidget {
   const _NotificationDetails({
     required this.user,
